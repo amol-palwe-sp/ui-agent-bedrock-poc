@@ -1,0 +1,141 @@
+package com.sailpoint.poc.uiagent.bedrock;
+
+import com.sailpoint.poc.uiagent.JsonUtil;
+import java.time.Duration;
+import java.util.Base64;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.http.apache.ApacheHttpClient;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.bedrockruntime.BedrockRuntimeClient;
+import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelRequest;
+import software.amazon.awssdk.services.bedrockruntime.model.InvokeModelResponse;
+import software.amazon.awssdk.services.bedrockruntime.model.ResourceNotFoundException;
+import software.amazon.awssdk.services.bedrockruntime.model.ValidationException;
+
+/**
+ * Bedrock Runtime invoke for Claude (Anthropic Messages API), with optional PNG vision input.
+ */
+public final class BedrockAnthropicClient implements AutoCloseable {
+
+    private final BedrockRuntimeClient client;
+    private final String region;
+    private final String modelId;
+    private final int maxTokens;
+    private final double temperature;
+
+    public BedrockAnthropicClient(String region, String awsProfile, String modelId, int maxTokens, double temperature) {
+        this.region = region;
+        this.modelId = modelId;
+        this.maxTokens = maxTokens;
+        this.temperature = temperature;
+
+        ApacheHttpClient.Builder httpClientBuilder =
+                ApacheHttpClient.builder().socketTimeout(Duration.ofSeconds(180));
+
+        var builder = BedrockRuntimeClient.builder()
+                .region(Region.of(region))
+                .httpClientBuilder(httpClientBuilder);
+
+        if (awsProfile != null && !awsProfile.isBlank()) {
+            builder.credentialsProvider(ProfileCredentialsProvider.create(awsProfile));
+        } else {
+            builder.credentialsProvider(ProfileCredentialsProvider.create());
+        }
+
+        this.client = builder.build();
+    }
+
+    public String invokeWithVision(String systemPrompt, String userText, byte[] screenshotPng) {
+        JSONObject body = buildRequestBody(systemPrompt, userText, screenshotPng);
+
+        InvokeModelRequest request = InvokeModelRequest.builder()
+                .modelId(modelId)
+                .contentType("application/json")
+                .accept("application/json")
+                .body(SdkBytes.fromUtf8String(body.toString()))
+                .build();
+
+        try {
+            InvokeModelResponse response = client.invokeModel(request);
+            JSONObject responseJson = new JSONObject(response.body().asUtf8String());
+            return extractAssistantText(responseJson);
+        } catch (ValidationException e) {
+            String msg = e.awsErrorDetails() != null ? e.awsErrorDetails().errorMessage() : String.valueOf(e.getMessage());
+            if (msg != null && (msg.contains("inference profile") || msg.contains("on-demand throughput"))) {
+                throw new IllegalStateException(
+                        "Bedrock rejected model id \"" + modelId + "\". Many newer Anthropic models must be called "
+                                + "with an inference profile ARN. In the AWS console: Bedrock → Inference profiles, "
+                                + "copy the profile ARN and set bedrock.model.id or env BEDROCK_MODEL_ID. AWS: " + msg, e);
+            }
+            throw e;
+        } catch (ResourceNotFoundException e) {
+            String msg = e.awsErrorDetails() != null ? e.awsErrorDetails().errorMessage() : String.valueOf(e.getMessage());
+            if (msg != null && (msg.contains("end of its life") || msg.contains("end of life"))) {
+                throw new IllegalStateException(
+                        "This Bedrock model id is retired: \"" + modelId + "\". Use a current model or inference "
+                                + "profile. Example: anthropic.claude-3-5-sonnet-20241022-v2:0. AWS: " + msg, e);
+            }
+            throw new IllegalStateException(
+                    "Bedrock could not find model id \"" + modelId + "\". Check region and model access. AWS: " + msg, e);
+        }
+    }
+
+    private JSONObject buildRequestBody(String systemPrompt, String userText, byte[] screenshotPng) {
+        JSONArray userContent = new JSONArray();
+
+        if (screenshotPng != null && screenshotPng.length > 0) {
+            String b64 = Base64.getEncoder().encodeToString(screenshotPng);
+            userContent.put(new JSONObject()
+                    .put("type", "image")
+                    .put("source", new JSONObject()
+                            .put("type", "base64")
+                            .put("media_type", "image/png")
+                            .put("data", b64)));
+        }
+
+        userContent.put(new JSONObject().put("type", "text").put("text", userText));
+
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject().put("role", "user").put("content", userContent));
+
+        JSONObject root = new JSONObject()
+                .put("anthropic_version", "bedrock-2023-05-31")
+                .put("max_tokens", maxTokens)
+                .put("temperature", temperature)
+                .put("messages", messages);
+
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            root.put("system", systemPrompt);
+        }
+
+        return root;
+    }
+
+    private static String extractAssistantText(JSONObject responseBody) {
+        JSONArray content = responseBody.optJSONArray("content");
+        if (content == null || content.isEmpty()) return responseBody.toString();
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < content.length(); i++) {
+            JSONObject block = content.optJSONObject(i);
+            if (block != null && "text".equals(block.optString("type"))) {
+                out.append(block.optString("text"));
+            }
+        }
+        return out.length() > 0 ? out.toString() : responseBody.toString();
+    }
+
+    /** Parse model output as JSON after stripping fences and leading prose. */
+    public static JSONObject parseModelJson(String rawText) {
+        String cleaned = JsonUtil.stripMarkdownFence(rawText);
+        String object = JsonUtil.extractFirstJsonObject(cleaned);
+        return new JSONObject(object);
+    }
+
+    @Override
+    public void close() {
+        client.close();
+    }
+}

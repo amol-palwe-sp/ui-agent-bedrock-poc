@@ -1,0 +1,15 @@
+# Gradle
+.gradle/
+build/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Playwright browser downloads
+~/.cache/ms-playwright/
+
+# Secrets — never commit the real properties file if it contains credentials
+# (check in application.properties.example instead)
+# src/main/resources/application.properties
