@@ -10,6 +10,7 @@ import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.PlaywrightException;
 import com.microsoft.playwright.options.BoundingBox;
 import com.microsoft.playwright.options.LoadState;
+import com.microsoft.playwright.options.ScreenshotType;
 import com.microsoft.playwright.options.WaitUntilState;
 import java.util.HashMap;
 import java.util.Map;
@@ -147,14 +148,14 @@ public final class BrowserSession implements AutoCloseable {
      */
     private Page page;
 
-    public BrowserSession(boolean headless, int slowMoMs) {
+    public BrowserSession(boolean headless, int slowMoMs, int viewportWidth, int viewportHeight) {
         this.playwright = Playwright.create();
         BrowserType.LaunchOptions launchOptions = new BrowserType.LaunchOptions().setHeadless(headless);
         if (slowMoMs > 0) {
             launchOptions.setSlowMo(slowMoMs);
         }
         this.browser = playwright.chromium().launch(launchOptions);
-        this.context = browser.newContext(new Browser.NewContextOptions().setViewportSize(1280, 800));
+        this.context = browser.newContext(new Browser.NewContextOptions().setViewportSize(viewportWidth, viewportHeight));
         this.page = context.newPage();
         page.setDefaultTimeout(DEFAULT_ACTION_TIMEOUT_MS);
 
@@ -224,6 +225,30 @@ public final class BrowserSession implements AutoCloseable {
                 return page.screenshot(new Page.ScreenshotOptions().setFullPage(false));
             } catch (PlaywrightException retry) {
                 System.err.println("screenshot failed twice: " + retry.getMessage());
+                return new byte[0];
+            }
+        }
+    }
+
+    /**
+     * Captures the viewport as a JPEG image at the given quality (0–100). JPEG is typically 3–6x smaller than PNG for
+     * the same viewport, which meaningfully reduces the base64 payload sent to Bedrock on every vision call.
+     *
+     * @param quality JPEG quality, 0–100. 70 is a good balance of clarity vs. cost.
+     */
+    public byte[] viewportScreenshotJpeg(int quality) {
+        Page.ScreenshotOptions opts = new Page.ScreenshotOptions()
+                .setFullPage(false)
+                .setType(ScreenshotType.JPEG)
+                .setQuality(Math.max(0, Math.min(100, quality)));
+        try {
+            return page.screenshot(opts);
+        } catch (PlaywrightException e) {
+            sleepQuietly(500);
+            try {
+                return page.screenshot(opts);
+            } catch (PlaywrightException retry) {
+                System.err.println("screenshot (jpeg) failed twice: " + retry.getMessage());
                 return new byte[0];
             }
         }

@@ -50,4 +50,13 @@ public final class PocConfig {
     public int agentMaxSteps() { return Integer.parseInt(optional("agent.max_steps", "15")); }
     public boolean browserHeadless() { return Boolean.parseBoolean(optional("browser.headless", "false")); }
     public int browserSlowMoMs() { return Integer.parseInt(optional("browser.slow_mo_ms", "0")); }
+
+    /** {@code jpeg} or {@code png}. Defaults to {@code jpeg} for lower token cost. */
+    public String screenshotFormat() { return optional("screenshot.format", "jpeg"); }
+
+    /** JPEG quality 0–100. Ignored when format is {@code png}. */
+    public int screenshotJpegQuality() { return Integer.parseInt(optional("screenshot.jpeg.quality", "70")); }
+
+    public int browserViewportWidth() { return Integer.parseInt(optional("browser.viewport.width", "1024")); }
+    public int browserViewportHeight() { return Integer.parseInt(optional("browser.viewport.height", "640")); }
 }

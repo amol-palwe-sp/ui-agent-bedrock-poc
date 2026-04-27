@@ -105,16 +105,35 @@ public final class BedrockAnthropicClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Auto-detects whether {@code bytes} is a JPEG or PNG by inspecting its magic bytes.
+     * <ul>
+     *   <li>JPEG starts with {@code FF D8 FF}</li>
+     *   <li>PNG starts with {@code 89 50 4E 47} ({@code \x89PNG})</li>
+     * </ul>
+     * Defaults to {@code image/png} when the format cannot be determined.
+     */
+    private static String detectMediaType(byte[] bytes) {
+        if (bytes == null || bytes.length < 3) return "image/png";
+        if ((bytes[0] & 0xFF) == 0xFF
+                && (bytes[1] & 0xFF) == 0xD8
+                && (bytes[2] & 0xFF) == 0xFF) {
+            return "image/jpeg";
+        }
+        return "image/png";
+    }
+
     private JSONObject buildRequestBody(String systemPrompt, String userText, byte[] screenshotPng) {
         JSONArray userContent = new JSONArray();
 
         if (screenshotPng != null && screenshotPng.length > 0) {
             String b64 = Base64.getEncoder().encodeToString(screenshotPng);
+            String mediaType = detectMediaType(screenshotPng);
             userContent.put(new JSONObject()
                     .put("type", "image")
                     .put("source", new JSONObject()
                             .put("type", "base64")
-                            .put("media_type", "image/png")
+                            .put("media_type", mediaType)
                             .put("data", b64)));
         }
 

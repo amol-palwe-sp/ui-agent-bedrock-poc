@@ -76,11 +76,20 @@ public final class AgentLoop {
     public void run() throws Exception {
         List<String> history = new ArrayList<>();
         TokenUsage totalUsage = TokenUsage.ZERO;
+        String lastActionType = "INIT"; // INIT forces a screenshot on the first step
 
         for (int step = 0; step < maxSteps; step++) {
             JSONArray elements = browser.listInteractables();
             String elementText = browser.formatElementsForPrompt(elements);
-            byte[] png = browser.viewportScreenshotPng();
+
+            // Only capture a screenshot when the visual state may have changed.
+            byte[] screenshot = new byte[0];
+            if (shouldTakeScreenshot(lastActionType)) {
+                screenshot = browser.viewportScreenshotJpeg(70);
+                System.out.printf("  [Screenshot] JPEG taken (%d KB)%n", screenshot.length / 1024);
+            } else {
+                System.out.println("  [Screenshot] Skipped (last action=" + lastActionType + ")");
+            }
 
             String userMessage = buildUserMessage(step, elementText, history);
 
@@ -88,7 +97,7 @@ public final class AgentLoop {
             System.out.println("URL: " + browser.currentUrl());
             System.out.println("Indexed elements: " + elements.length());
 
-            InvokeResult invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, png);
+            InvokeResult invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, screenshot);
 
             TokenUsage stepUsage = invokeResult.usage();
             totalUsage = totalUsage.add(stepUsage);
@@ -116,6 +125,8 @@ public final class AgentLoop {
             }
 
             BatchOutcome outcome = executeActions(actions, history, step);
+            lastActionType = getLastActionType(actions);
+
             if (outcome.stop || goalAchieved) {
                 System.out.println("Stopped after goal achieved or terminal action.");
                 printTotalUsage(totalUsage);
@@ -125,6 +136,27 @@ public final class AgentLoop {
 
         System.out.println("Max steps reached without explicit DONE.");
         printTotalUsage(totalUsage);
+    }
+
+    /**
+     * Returns whether a fresh screenshot should be captured before sending the next prompt.
+     * Actions that visibly change the page (navigation, clicks, key presses) always warrant one;
+     * actions that only modify transient state (typing, scrolling, waiting) can safely skip it.
+     */
+    private static boolean shouldTakeScreenshot(String lastAction) {
+        if (lastAction == null) return true;
+        return switch (lastAction.toUpperCase()) {
+            case "INIT", "GOTO", "CLICK", "SELECT_OPTION", "KEYPRESS" -> true;
+            case "TYPE", "SCROLL", "WAIT" -> false;
+            default -> true; // unknown — safe to screenshot
+        };
+    }
+
+    /** Returns the type string of the last action that was actually executed in the batch. */
+    private static String getLastActionType(JSONArray actions) {
+        if (actions == null || actions.isEmpty()) return "UNKNOWN";
+        int lastIdx = Math.min(actions.length(), MAX_ACTIONS_PER_BATCH) - 1;
+        return actions.getJSONObject(lastIdx).optString("type", "UNKNOWN").toUpperCase();
     }
 
     private static void printTotalUsage(TokenUsage total) {

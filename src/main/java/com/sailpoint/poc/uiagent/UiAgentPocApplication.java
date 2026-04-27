@@ -55,7 +55,11 @@ public final class UiAgentPocApplication {
                         modelId,
                         config.maxTokens(),
                         config.temperature());
-                BrowserSession browser = new BrowserSession(config.browserHeadless(), config.browserSlowMoMs())) {
+                BrowserSession browser = new BrowserSession(
+                        config.browserHeadless(),
+                        config.browserSlowMoMs(),
+                        config.browserViewportWidth(),
+                        config.browserViewportHeight())) {
 
             System.out.println("Navigating to: " + parsed.startUrl);
             browser.navigate(parsed.startUrl);
