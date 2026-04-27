@@ -1,6 +1,7 @@
 package com.sailpoint.poc.uiagent;
 
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
+import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import java.util.ArrayList;
 import java.util.List;
@@ -13,6 +14,8 @@ import org.json.JSONObject;
  *
  * <p>Every action goes through a fallback ladder in {@link BrowserSession}, the page is re-scraped between turns, and
  * a navigation mid-batch ends the batch so the model gets a fresh element list before its next decision.
+ *
+ * <p>Per-step and cumulative {@link TokenUsage} is printed after each LLM call and summarised at the end.
  */
 public final class AgentLoop {
 
@@ -72,6 +75,7 @@ public final class AgentLoop {
 
     public void run() throws Exception {
         List<String> history = new ArrayList<>();
+        TokenUsage totalUsage = TokenUsage.ZERO;
 
         for (int step = 0; step < maxSteps; step++) {
             JSONArray elements = browser.listInteractables();
@@ -84,7 +88,13 @@ public final class AgentLoop {
             System.out.println("URL: " + browser.currentUrl());
             System.out.println("Indexed elements: " + elements.length());
 
-            String raw = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, png);
+            InvokeResult invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, png);
+
+            TokenUsage stepUsage = invokeResult.usage();
+            totalUsage = totalUsage.add(stepUsage);
+            System.out.println("  [Token Usage] Step " + (step + 1) + ": " + stepUsage);
+
+            String raw = invokeResult.text();
             JSONObject plan;
             try {
                 plan = BedrockAnthropicClient.parseModelJson(raw);
@@ -96,7 +106,7 @@ public final class AgentLoop {
             }
 
             String reasoning = plan.optString("reasoning", "");
-            System.out.println("Model reasoning: " + reasoning);
+            System.out.println("  Model reasoning: " + reasoning);
 
             boolean goalAchieved = plan.optBoolean("goal_achieved", false);
             JSONArray actions = plan.optJSONArray("actions");
@@ -108,11 +118,19 @@ public final class AgentLoop {
             BatchOutcome outcome = executeActions(actions, history, step);
             if (outcome.stop || goalAchieved) {
                 System.out.println("Stopped after goal achieved or terminal action.");
+                printTotalUsage(totalUsage);
                 return;
             }
         }
 
         System.out.println("Max steps reached without explicit DONE.");
+        printTotalUsage(totalUsage);
+    }
+
+    private static void printTotalUsage(TokenUsage total) {
+        System.out.println("\n========== TOTAL TOKEN USAGE ==========");
+        System.out.println(total);
+        System.out.println("========================================");
     }
 
     private String buildUserMessage(int step, String elementText, List<String> history) {
@@ -156,7 +174,6 @@ public final class AgentLoop {
             } catch (InterruptedException ie) {
                 throw ie;
             } catch (Throwable ex) {
-                // Catch anything so one bad action becomes feedback — it never crashes the agent.
                 String msg = ex.getClass().getSimpleName() + ": "
                         + (ex.getMessage() == null ? "(no message)" : firstLine(ex.getMessage()));
                 System.err.println("Action " + type + " threw: " + msg);
@@ -165,14 +182,12 @@ public final class AgentLoop {
             System.out.println("  result: " + result);
             addHistory(history, "step " + step + " action " + i + " " + type + " → " + summarize(result, a));
 
-            // Stop batch if URL changed: subsequent element_ids came from the previous DOM.
             String urlAfter = browser.currentUrl();
             if (!urlAfter.equals(urlBefore)) {
                 System.out.println("URL changed (" + urlBefore + " → " + urlAfter + "). Ending batch to re-observe.");
                 addHistory(history, "step " + step + " navigated to " + urlAfter + "; remaining actions skipped");
                 break;
             }
-            // Stop batch on hard failure so the model can re-plan.
             if (!result.optBoolean("ok", false)) {
                 System.out.println("Action failed; ending batch to re-observe.");
                 break;

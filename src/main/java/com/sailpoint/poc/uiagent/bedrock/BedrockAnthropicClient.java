@@ -1,6 +1,8 @@
 package com.sailpoint.poc.uiagent.bedrock;
 
 import com.sailpoint.poc.uiagent.JsonUtil;
+import com.sailpoint.poc.uiagent.ModelPricing;
+import com.sailpoint.poc.uiagent.TokenUsage;
 import java.time.Duration;
 import java.util.Base64;
 import org.json.JSONArray;
@@ -17,8 +19,16 @@ import software.amazon.awssdk.services.bedrockruntime.model.ValidationException;
 
 /**
  * Bedrock Runtime invoke for Claude (Anthropic Messages API), with optional PNG vision input.
+ *
+ * <p>Returns an {@link InvokeResult} that carries both the assistant text and a {@link TokenUsage} snapshot so the
+ * caller can accumulate per-run cost without any extra network calls.
  */
 public final class BedrockAnthropicClient implements AutoCloseable {
+
+    /**
+     * Combined result of one {@link #invokeWithVision} call: the assistant text and the token usage / cost.
+     */
+    public record InvokeResult(String text, TokenUsage usage) {}
 
     private final BedrockRuntimeClient client;
     private final String region;
@@ -48,7 +58,10 @@ public final class BedrockAnthropicClient implements AutoCloseable {
         this.client = builder.build();
     }
 
-    public String invokeWithVision(String systemPrompt, String userText, byte[] screenshotPng) {
+    /**
+     * Invoke Claude with an optional viewport screenshot and return both the assistant text and the token usage.
+     */
+    public InvokeResult invokeWithVision(String systemPrompt, String userText, byte[] screenshotPng) {
         JSONObject body = buildRequestBody(systemPrompt, userText, screenshotPng);
 
         InvokeModelRequest request = InvokeModelRequest.builder()
@@ -61,7 +74,16 @@ public final class BedrockAnthropicClient implements AutoCloseable {
         try {
             InvokeModelResponse response = client.invokeModel(request);
             JSONObject responseJson = new JSONObject(response.body().asUtf8String());
-            return extractAssistantText(responseJson);
+
+            String text = extractAssistantText(responseJson);
+
+            JSONObject usage = responseJson.optJSONObject("usage");
+            int inputTokens  = usage != null ? usage.optInt("input_tokens",  0) : 0;
+            int outputTokens = usage != null ? usage.optInt("output_tokens", 0) : 0;
+            TokenUsage tokenUsage = ModelPricing.calculate(modelId, inputTokens, outputTokens);
+
+            return new InvokeResult(text, tokenUsage);
+
         } catch (ValidationException e) {
             String msg = e.awsErrorDetails() != null ? e.awsErrorDetails().errorMessage() : String.valueOf(e.getMessage());
             if (msg != null && (msg.contains("inference profile") || msg.contains("on-demand throughput"))) {
