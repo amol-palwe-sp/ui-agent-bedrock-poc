@@ -59,12 +59,26 @@ public final class UiAgentPocApplication {
                         config.browserHeadless(),
                         config.browserSlowMoMs(),
                         config.browserViewportWidth(),
-                        config.browserViewportHeight())) {
+                        config.browserViewportHeight(),
+                        config.browserStartMaximized(),
+                        config.browserFullscreenViewportWidth(),
+                        config.browserFullscreenViewportHeight(),
+                        config.actionTimeoutClickMs(),
+                        config.actionTimeoutTypeMs(),
+                        config.actionTimeoutNavigateMs(),
+                        config.interActionDelayMs());
+                ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
 
             System.out.println("Navigating to: " + parsed.startUrl);
             browser.navigate(parsed.startUrl);
 
-            AgentLoop loop = new AgentLoop(bedrock, browser, config.agentMaxSteps(), parsed.goal);
+            AgentLoop loop = new AgentLoop(
+                    bedrock,
+                    browser,
+                    actionLogger,
+                    config.agentMaxSteps(),
+                    parsed.goal,
+                    config.agentNoProgressLimit());
             loop.run();
         }
     }
