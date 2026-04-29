@@ -1,18 +1,14 @@
-# UI Agent Bedrock POC — LLM prompt (video → `--args`)
+package com.sailpoint.poc.uiagent.video;
 
-## Core problem
+/**
+ * Single source of truth for the system and user prompts used to convert
+ * video frames into a goal command string. Content derived from PROMPT.md.
+ */
+public final class VideoToGoalPrompt {
 
-You need a single, repeatable prompt that:
+    private VideoToGoalPrompt() {}
 
-1. Takes a screen recording as the only behavioral source of truth  
-2. Extracts **only** actions that are **visibly performed** in that recording  
-3. Emits one parseable `./gradlew run --args='...'` line every time  
-
----
-
-## SYSTEM PROMPT (feed with video)
-
-```
+    public static final String SYSTEM_PROMPT = """
 You are a UI workflow analyzer for an automated browser agent (Playwright + Bedrock).
 Your job is to watch ONE screen recording and produce ONE precise command line.
 
@@ -70,94 +66,27 @@ Example shape (illustrative only; your output must come from the actual video):
 ```
 
 No preamble. No explanation. No second code block.
-```
+""";
 
----
-
-## USER PROMPT (attach the video)
-
-```
-Watch the attached screen recording only.
+    public static final String USER_PROMPT = """
+Watch the attached screen recording frames only.
 
 1) Infer --url from what is visibly shown (address bar / first stable page).
 2) List every user interaction you actually see, in order, with no extra steps.
 3) Emit only the ```goal block with the single ./gradlew run --args='...' line as specified in the system prompt.
-```
+""";
 
----
+    public static final String USER_PROMPT_WITH_URL_TEMPLATE = """
+Starting URL (fixed): %s
 
-## Golden reference (format + completion clause)
+Watch the attached screen recording frames only.
 
-This is the intended style for `--goal`: comma-separated clauses with `, then `, double-quoted typed values, exact on-screen labels, and a final stop clause.
+1) Use the URL provided above — do not change it.
+2) List every user interaction you actually see, in order, with no extra steps.
+3) Emit only the ```goal block with the single ./gradlew run --args='...' line as specified in the system prompt.
+""";
 
-```
-./gradlew run --args='--url=https://admin.google.com/ac/users --goal=click Sign in with Google button, then enter "you@example.com" in the Email or phone field, then click Next button, then enter "your-password" in the Password field, then click Next button, then click Admin icon, then click Directory, then click Users, then click Add user, then enter "John Doe" in the Name field, then click on Primary email field and then click ADD NEW USER button, then this completes all steps — do not perform any further actions'
-```
-
-Notes:
-
-- You may join two micro-actions in one clause with " and then " when the video shows one continuous gesture (see "Primary email" … "ADD NEW USER" in the example)—still no invented steps.
-- The closing clause is not a user UI action; it is an instruction to the agent to halt after the last real step.
-
----
-
-## Variants
-
-### A — URL already known
-
-```
-Starting URL (fixed): https://example.com/path
-Extract only the goal from the video. Do not change the URL.
-```
-
-### B — Parameterize secrets
-
-```
-Replace passwords and emails with {{VARIABLE}} placeholders in the goal only.
-Example: enter "{{ADMIN_EMAIL}}" in the Email or phone field
-```
-
-### C — Multiple independent workflows in one file
-
-```
-If the recording clearly contains separate sessions (e.g. full logout and new login),
-output one ```goal block per independent workflow, each on its own line inside the block or separate blocks labeled Workflow 1 / Workflow 2. Never merge unrelated flows.
-```
-
----
-
-## Validation checklist (post-LLM)
-
-- [ ] Output is only the ```goal block plus its single line  
-- [ ] Line starts with `./gradlew run --args='`  
-- [ ] Contains `--url=` with `http://` or `https://`  
-- [ ] Contains `--goal=` with steps joined by `, then `  
-- [ ] No newlines inside the quoted `--args` value  
-- [ ] No numbered steps  
-- [ ] Typed values appear in double quotes where applicable  
-- [ ] Line ends with `'`  
-- [ ] No steps that are not justified by something visible in the video  
-
----
-
-## Quick reference — goal anatomy
-
-| Pattern | Example |
-|--------|---------|
-| Type | `enter "text" in the Field label field` |
-| Click | `click Save button` / `click Users link` |
-| Separator | `, then ` (comma space then space) |
-| Stop | `then this completes all steps — do not perform any further actions` |
-
----
-
-## Integration tips
-
-```bash
-# Attach video to a vision-capable model; paste SYSTEM + USER prompts.
-
-# Extract the gradle line (adjust for your parser)
-sed -n '/```goal/,/```/p' llm_output.txt | grep -v '```'
-```
-
-Why this stays stable: one separator, one output shape, video-only steps, explicit halt clause, and labels aligned with on-screen text for the scraper.
+    public static String userPromptWithUrl(String url) {
+        return String.format(USER_PROMPT_WITH_URL_TEMPLATE, url);
+    }
+}

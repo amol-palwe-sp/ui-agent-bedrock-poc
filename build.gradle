@@ -31,8 +31,35 @@ dependencies {
     implementation 'software.amazon.awssdk:ssooidc'
     implementation 'org.json:json:20240303'
     implementation 'com.microsoft.playwright:playwright:1.49.0'
+
+    // OpenCV for video frame extraction (pre-built with Java bindings)
+    implementation 'org.openpnp:opencv:4.7.0-0'
+
+    // Multipart file upload for the web UI
+    implementation 'commons-fileupload:commons-fileupload:1.5'
+    implementation 'commons-io:commons-io:2.15.1'
+    // commons-fileupload 1.x references javax.servlet at compile time
+    compileOnly 'javax.servlet:javax.servlet-api:4.0.1'
 }
 
 run {
     standardInput = System.in
+}
+
+task runUI(type: JavaExec) {
+    group       = 'application'
+    description = 'Launch UI Agent web interface → http://localhost:8080'
+    mainClass   = 'com.sailpoint.poc.uiagent.ui.AgentUIServer'
+    classpath   = sourceSets.main.runtimeClasspath
+    standardInput = System.in
+}
+
+task runVideo(type: JavaExec) {
+    description = 'Run the video to goal pipeline'
+    group = 'application'
+    mainClass = 'com.sailpoint.poc.uiagent.video.VideoToGoalRunner'
+    classpath = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
 }

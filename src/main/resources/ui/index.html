@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Agent POC — SailPoint</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="shortcut icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- ── NAVBAR ─────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <img src="/sailpoint.png" alt="SailPoint" height="32">
+      <span>UI Agent POC</span>
+    </div>
+    <div class="status-indicator">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Ready</span>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ───────────────────────────────────────────────────────────── -->
+  <main class="container">
+
+    <!-- ── STEP 1: UPLOAD ──────────────────────────────────────────────── -->
+    <section class="card" id="sectionUpload">
+      <div class="card-header">
+        <span class="step-badge">1</span>
+        Upload Recording
+      </div>
+      <div class="card-body">
+
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-zone-icon">📎</div>
+          <div class="drop-zone-text">
+            Drop MP4 here or <span class="link">browse</span>
+          </div>
+          <div class="drop-zone-sub">MP4 files only · max 500 MB</div>
+          <input type="file" id="fileInput" accept=".mp4" hidden>
+        </div>
+
+        <div class="file-info hidden" id="fileInfo">
+          <span class="file-icon">🎬</span>
+          <span id="fileName"></span>
+          <span id="fileSize" class="file-size"></span>
+          <span class="file-ok">✅</span>
+        </div>
+
+        <details class="options-panel">
+          <summary>Advanced Options</summary>
+          <div class="options-grid">
+            <label>Override URL
+              <input type="url" id="overrideUrl" placeholder="https://... (optional)">
+            </label>
+            <label>Max Frames
+              <input type="number" id="maxFrames" value="80" min="10" max="200">
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="saveDebugFrames">
+              Save debug frames
+            </label>
+          </div>
+        </details>
+
+        <button class="btn btn-primary btn-lg" id="btnGenerate" disabled>
+          <span id="btnGenerateText">Generate Script</span>
+          <span id="btnGenerateSpinner" class="spinner hidden"></span>
+        </button>
+
+      </div>
+    </section>
+
+    <!-- ── STEP 2: SCRIPT ──────────────────────────────────────────────── -->
+    <section class="card locked" id="sectionScript">
+      <div class="card-header">
+        <span class="step-badge">2</span>
+        Generated Script
+        <div class="card-header-actions">
+          <span id="validationBadge" class="badge hidden"></span>
+          <span id="tokenInfo" class="token-info hidden"></span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div class="steps-editor">
+          <div class="steps-label">Edit steps — each line is one action:</div>
+          <div id="stepsList" class="steps-list"></div>
+          <button class="btn btn-ghost btn-sm" id="btnAddStep">+ Add Step</button>
+        </div>
+
+        <div class="command-preview">
+          <div class="command-label">
+            Assembled command:
+            <button class="btn btn-ghost btn-sm" id="btnCopy">📋 Copy</button>
+          </div>
+          <div class="command-box" id="commandBox"></div>
+        </div>
+
+        <div class="action-row">
+          <button class="btn btn-primary btn-lg" id="btnRun" disabled>
+            ▶ Run Script
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── STEP 3: LOG ─────────────────────────────────────────────────── -->
+    <section class="card locked" id="sectionLog">
+      <div class="card-header">
+        <span class="step-badge">3</span>
+        Execution Log
+        <button class="btn btn-danger btn-sm hidden" id="btnStop">⏹ Stop</button>
+      </div>
+      <div class="card-body">
+        <div class="log-panel" id="logPanel">
+          <div class="log-placeholder">Execution log will appear here...</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
