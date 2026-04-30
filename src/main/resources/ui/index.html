@@ -86,12 +86,28 @@
       </div>
       <div class="card-body">
 
-        <div class="steps-editor">
-          <div class="steps-label">Edit steps — each line is one action:</div>
-          <div id="stepsList" class="steps-list"></div>
-          <button class="btn btn-ghost btn-sm" id="btnAddStep">+ Add Step</button>
+        <!-- PART A: Placeholder values (prominent, pre-filled) -->
+        <div id="placeholderSection" class="placeholder-section hidden">
+          <div class="placeholder-header">
+            <span class="placeholder-icon">🔑</span>
+            <span>Script Values</span>
+            <span class="placeholder-subtitle">Fill in values before running</span>
+          </div>
+          <div id="placeholderGrid" class="placeholder-grid">
+            <!-- Dynamically populated -->
+          </div>
         </div>
 
+        <!-- PART B: Steps (collapsible) -->
+        <details id="stepsDetails" class="steps-collapsible">
+          <summary id="stepsSummary">Script Steps</summary>
+          <div class="steps-body">
+            <div id="stepsList" class="steps-list"></div>
+            <button class="btn btn-ghost btn-sm" id="btnAddStep">+ Add Step</button>
+          </div>
+        </details>
+
+        <!-- PART C: Assembled command -->
         <div class="command-preview">
           <div class="command-label">
             Assembled command:
@@ -100,6 +116,17 @@
           <div class="command-box" id="commandBox"></div>
         </div>
 
+        <!-- PART D: Empty-placeholder warning banner -->
+        <div id="emptyPlaceholderWarning" class="warning-banner hidden">
+          <span>⚠️</span>
+          <span id="warningText"></span>
+          <div class="warning-actions">
+            <button class="btn btn-ghost btn-sm" id="btnContinueAnyway">Continue Anyway</button>
+            <button class="btn btn-ghost btn-sm" id="btnGoBack">Go Back</button>
+          </div>
+        </div>
+
+        <!-- PART E: Run button -->
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btnRun" disabled>
             ▶ Run Script

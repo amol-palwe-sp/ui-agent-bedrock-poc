@@ -3,7 +3,8 @@
 
   // ── State ──────────────────────────────────────────────────────────────────
   let uploadedFile    = null;
-  let generatedSteps  = [];
+  let generatedSteps  = [];   // tokenized steps (contain {Token} placeholders)
+  let placeholders    = [];   // PlaceholderObject[]
   let generatedUrl    = '';
   const HALT_CLAUSE   = 'this completes all steps — do not perform any further actions';
   let eventSource     = null;
@@ -11,31 +12,39 @@
   let isRunning       = false;
 
   // ── Element refs ───────────────────────────────────────────────────────────
-  const dropZone            = document.getElementById('dropZone');
-  const fileInput           = document.getElementById('fileInput');
-  const fileInfo            = document.getElementById('fileInfo');
-  const fileName            = document.getElementById('fileName');
-  const fileSize            = document.getElementById('fileSize');
-  const overrideUrl         = document.getElementById('overrideUrl');
-  const maxFramesInput      = document.getElementById('maxFrames');
-  const saveDebugFrames     = document.getElementById('saveDebugFrames');
-  const btnGenerate         = document.getElementById('btnGenerate');
-  const btnGenerateText     = document.getElementById('btnGenerateText');
-  const btnGenerateSpinner  = document.getElementById('btnGenerateSpinner');
-  const sectionScript       = document.getElementById('sectionScript');
-  const stepsList           = document.getElementById('stepsList');
-  const btnAddStep          = document.getElementById('btnAddStep');
-  const commandBox          = document.getElementById('commandBox');
-  const btnCopy             = document.getElementById('btnCopy');
-  const validationBadge     = document.getElementById('validationBadge');
-  const tokenInfo           = document.getElementById('tokenInfo');
-  const btnRun              = document.getElementById('btnRun');
-  const sectionLog          = document.getElementById('sectionLog');
-  const logPanel            = document.getElementById('logPanel');
-  const btnStop             = document.getElementById('btnStop');
-  const statusDot           = document.getElementById('statusDot');
-  const statusText          = document.getElementById('statusText');
-  const toastContainer      = document.getElementById('toastContainer');
+  const dropZone               = document.getElementById('dropZone');
+  const fileInput              = document.getElementById('fileInput');
+  const fileInfo               = document.getElementById('fileInfo');
+  const fileName               = document.getElementById('fileName');
+  const fileSize               = document.getElementById('fileSize');
+  const overrideUrl            = document.getElementById('overrideUrl');
+  const maxFramesInput         = document.getElementById('maxFrames');
+  const saveDebugFrames        = document.getElementById('saveDebugFrames');
+  const btnGenerate            = document.getElementById('btnGenerate');
+  const btnGenerateText        = document.getElementById('btnGenerateText');
+  const btnGenerateSpinner     = document.getElementById('btnGenerateSpinner');
+  const sectionScript          = document.getElementById('sectionScript');
+  const placeholderSection     = document.getElementById('placeholderSection');
+  const placeholderGrid        = document.getElementById('placeholderGrid');
+  const stepsDetails           = document.getElementById('stepsDetails');
+  const stepsSummary           = document.getElementById('stepsSummary');
+  const stepsList              = document.getElementById('stepsList');
+  const btnAddStep             = document.getElementById('btnAddStep');
+  const commandBox             = document.getElementById('commandBox');
+  const btnCopy                = document.getElementById('btnCopy');
+  const validationBadge        = document.getElementById('validationBadge');
+  const tokenInfo              = document.getElementById('tokenInfo');
+  const btnRun                 = document.getElementById('btnRun');
+  const sectionLog             = document.getElementById('sectionLog');
+  const logPanel               = document.getElementById('logPanel');
+  const btnStop                = document.getElementById('btnStop');
+  const statusDot              = document.getElementById('statusDot');
+  const statusText             = document.getElementById('statusText');
+  const toastContainer         = document.getElementById('toastContainer');
+  const emptyPlaceholderWarning = document.getElementById('emptyPlaceholderWarning');
+  const warningText            = document.getElementById('warningText');
+  const btnContinueAnyway      = document.getElementById('btnContinueAnyway');
+  const btnGoBack              = document.getElementById('btnGoBack');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
@@ -48,6 +57,11 @@
     btnStop.addEventListener('click', handleStop);
     btnCopy.addEventListener('click', handleCopy);
     btnAddStep.addEventListener('click', function () { addStep(''); });
+    btnContinueAnyway.addEventListener('click', function () {
+      hideWarningBanner();
+      doRun();
+    });
+    btnGoBack.addEventListener('click', hideWarningBanner);
   });
 
   // ── Drop Zone ──────────────────────────────────────────────────────────────
@@ -110,7 +124,19 @@
           return;
         }
         generatedUrl = data.url || '';
-        populateStepsEditor(data.steps || []);
+
+        // Tokenize steps and extract placeholders
+        const rawSteps = (data.steps || []).filter(function (s) {
+          return !s.toLowerCase().includes('do not perform any further actions');
+        });
+        const extracted = extractPlaceholders(rawSteps);
+        generatedSteps = extracted.tokenizedSteps;
+        placeholders   = extracted.placeholders;
+
+        renderPlaceholderSection();
+        renderStepsList();
+        substituteAndAssemble();
+
         showValidationBadge(data.isValid, data.issues || []);
         showTokenInfo(data.inputTokens, data.outputTokens, data.costUsd);
         unlockSection(sectionScript);
@@ -128,16 +154,205 @@
       });
   }
 
-  // ── Steps Editor ───────────────────────────────────────────────────────────
-  function populateStepsEditor(steps) {
-    // strip trailing halt clause if Claude included it
-    const filtered = steps.filter(function (s) {
-      return !s.toLowerCase().includes('do not perform any further actions');
-    });
-    generatedSteps = filtered.slice();
-    renderStepsList();
+  // ── Placeholder Extraction ─────────────────────────────────────────────────
+
+  // Known label → canonical token mapping (checked in order, case-insensitive)
+  const LABEL_MAP = [
+    [/email or phone/i,   'Email'],
+    [/primary email/i,    'PrimaryEmail'],
+    [/email/i,            'Email'],
+    [/password/i,         'Password'],
+    [/first name/i,       'FirstName'],
+    [/last name/i,        'LastName'],
+    [/username/i,         'Username'],
+    [/phone/i,            'Phone'],
+    [/name/i,             'Name'],
+  ];
+
+  function labelToToken(label) {
+    const trimmed = label.trim();
+    for (const [pattern, token] of LABEL_MAP) {
+      if (pattern.test(trimmed)) return token;
+    }
+    // Generic: camelCase from label, strip trailing "field"
+    return trimmed
+      .replace(/\bfield\b/gi, '')
+      .trim()
+      .split(/\s+/)
+      .map(function (w, i) {
+        return i === 0
+          ? w.charAt(0).toUpperCase() + w.slice(1)
+          : w.charAt(0).toUpperCase() + w.slice(1);
+      })
+      .join('');
   }
 
+  function extractPlaceholders(rawSteps) {
+    const ENTER_RE = /enter "([^"]+)" in (?:the )?(.+?) field/i;
+    const tokenCounts = {};   // token → count (for deduplication)
+    const tokenizedSteps = [];
+    const placeholderList = [];
+    const seenValues = {};    // value+label → token (avoid duplicates)
+
+    rawSteps.forEach(function (step) {
+      const m = ENTER_RE.exec(step);
+      if (!m) {
+        tokenizedSteps.push(step);
+        return;
+      }
+
+      const value = m[1];
+      const label = m[2];
+      const cacheKey = label.toLowerCase() + '::' + value;
+
+      if (seenValues[cacheKey]) {
+        // Reuse same token for identical value+label
+        const tokenizedStep = step.replace(
+          '"' + value + '"',
+          seenValues[cacheKey]
+        );
+        tokenizedSteps.push(tokenizedStep);
+        return;
+      }
+
+      let baseToken = labelToToken(label);
+      tokenCounts[baseToken] = (tokenCounts[baseToken] || 0) + 1;
+      const count = tokenCounts[baseToken];
+      const token = '{' + baseToken + (count > 1 ? count : '') + '}';
+
+      const isPassword = /password/i.test(baseToken);
+      const isEmail    = /email/i.test(baseToken);
+
+      const ph = {
+        token:        token,
+        label:        label.trim(),
+        defaultValue: value,
+        currentValue: value,
+        inputType:    isPassword ? 'password' : (isEmail ? 'email' : 'text'),
+        isPassword:   isPassword,
+      };
+
+      placeholderList.push(ph);
+      seenValues[cacheKey] = token;
+
+      const tokenizedStep = step.replace('"' + value + '"', token);
+      tokenizedSteps.push(tokenizedStep);
+    });
+
+    return { tokenizedSteps: tokenizedSteps, placeholders: placeholderList };
+  }
+
+  // ── Placeholder Rendering ──────────────────────────────────────────────────
+  function renderPlaceholderSection() {
+    placeholderGrid.innerHTML = '';
+
+    if (placeholders.length === 0) {
+      placeholderSection.classList.add('hidden');
+      return;
+    }
+
+    placeholders.forEach(function (ph) {
+      // Label cell
+      const labelEl = document.createElement('div');
+      labelEl.className = 'placeholder-label';
+      labelEl.textContent = ph.token;
+      labelEl.title = ph.label;
+
+      // Input cell (wrapped for password toggle)
+      const inputWrapper = document.createElement('div');
+      if (ph.isPassword) inputWrapper.className = 'password-wrapper';
+
+      const input = document.createElement('input');
+      input.type        = ph.inputType;
+      input.value       = ph.currentValue;
+      input.className   = 'placeholder-input' + (ph.currentValue.trim() === '' ? ' empty' : '');
+      input.placeholder = ph.label;
+      input.dataset.token = ph.token;
+
+      input.addEventListener('input', function () {
+        updatePlaceholder(ph.token, input.value);
+        input.className = 'placeholder-input' + (input.value.trim() === '' ? ' empty' : '');
+        updateWarnIcon(ph.token, warnIcon);
+        substituteAndAssemble();
+      });
+
+      inputWrapper.appendChild(input);
+
+      if (ph.isPassword) {
+        const toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'password-toggle';
+        toggle.textContent = '👁';
+        toggle.title = 'Show / hide';
+        toggle.addEventListener('click', function () {
+          input.type = input.type === 'password' ? 'text' : 'password';
+          toggle.textContent = input.type === 'password' ? '👁' : '🙈';
+        });
+        inputWrapper.appendChild(toggle);
+      }
+
+      // Warning icon cell
+      const warnIcon = document.createElement('span');
+      warnIcon.className = 'placeholder-warn-icon' + (ph.currentValue.trim() === '' ? ' visible' : '');
+      warnIcon.textContent = '⚠';
+      warnIcon.title = 'Value is empty';
+
+      placeholderGrid.appendChild(labelEl);
+      placeholderGrid.appendChild(inputWrapper);
+      placeholderGrid.appendChild(warnIcon);
+    });
+
+    placeholderSection.classList.remove('hidden');
+  }
+
+  function updatePlaceholder(token, value) {
+    const ph = placeholders.find(function (p) { return p.token === token; });
+    if (ph) ph.currentValue = value;
+  }
+
+  function updateWarnIcon(token, iconEl) {
+    const ph = placeholders.find(function (p) { return p.token === token; });
+    if (!ph) return;
+    if (ph.currentValue.trim() === '') {
+      iconEl.classList.add('visible');
+    } else {
+      iconEl.classList.remove('visible');
+    }
+  }
+
+  // ── Substitution + Assemble ────────────────────────────────────────────────
+  function substituteAndAssemble() {
+    const substituted = generatedSteps.map(function (step) {
+      let s = step;
+      placeholders.forEach(function (ph) {
+        s = s.split(ph.token).join('"' + ph.currentValue + '"');
+      });
+      return s;
+    });
+
+    const active = substituted.filter(function (s) { return s.trim().length > 0; });
+    if (active.length === 0) {
+      commandBox.textContent = '';
+      btnRun.disabled = true;
+      updateStepsSummary(0);
+      return;
+    }
+
+    const allSteps   = active.concat([HALT_CLAUSE]);
+    const goalString = allSteps.join(', then ');
+    const goalLine   = "./gradlew run --args='--url=" + (generatedUrl || 'https://example.com')
+                     + " --goal=" + goalString + "'";
+    commandBox.textContent = goalLine;
+    btnRun.disabled = isRunning;
+    updateStepsSummary(active.length);
+    revalidateClient();
+  }
+
+  function updateStepsSummary(count) {
+    stepsSummary.textContent = 'Script Steps (' + count + ' step' + (count !== 1 ? 's' : '') + ')';
+  }
+
+  // ── Steps Editor ───────────────────────────────────────────────────────────
   function renderStepsList() {
     stepsList.innerHTML = '';
     generatedSteps.forEach(function (step, i) {
@@ -154,24 +369,20 @@
       ta.value = step;
       ta.addEventListener('input', function () {
         generatedSteps[i] = ta.value;
-        reassembleCommand();
-        revalidateClient();
+        substituteAndAssemble();
       });
 
       const rm = document.createElement('button');
       rm.className = 'btn-remove';
       rm.title = 'Remove step';
       rm.textContent = '✕';
-      rm.addEventListener('click', function () {
-        removeStep(i);
-      });
+      rm.addEventListener('click', function () { removeStep(i); });
 
       row.appendChild(num);
       row.appendChild(ta);
       row.appendChild(rm);
       stepsList.appendChild(row);
     });
-    reassembleCommand();
   }
 
   function addStep(text) {
@@ -179,38 +390,22 @@
     renderStepsList();
     const textareas = stepsList.querySelectorAll('.step-input');
     if (textareas.length > 0) textareas[textareas.length - 1].focus();
-    reassembleCommand();
+    substituteAndAssemble();
   }
 
   function removeStep(index) {
     generatedSteps.splice(index, 1);
     renderStepsList();
-    reassembleCommand();
-  }
-
-  function reassembleCommand() {
-    const active = generatedSteps.filter(function (s) { return s.trim().length > 0; });
-    if (active.length === 0) {
-      commandBox.textContent = '';
-      btnRun.disabled = true;
-      return;
-    }
-    const allSteps   = active.concat([HALT_CLAUSE]);
-    const goalString = allSteps.join(', then ');
-    const goalLine   = "./gradlew run --args='--url=" + (generatedUrl || 'https://example.com')
-                     + " --goal=" + goalString + "'";
-    commandBox.textContent = goalLine;
-    btnRun.disabled = isRunning;
+    substituteAndAssemble();
   }
 
   function revalidateClient() {
     const cmd = commandBox.textContent || '';
     const issues = [];
-    if (!cmd.startsWith("./gradlew run --args='"))   issues.push("Missing ./gradlew run --args='");
-    if (!cmd.includes('--url='))                      issues.push('Missing --url=');
-    if (!cmd.includes('--goal='))                     issues.push('Missing --goal=');
+    if (!cmd.startsWith("./gradlew run --args='"))          issues.push("Missing ./gradlew run --args='");
+    if (!cmd.includes('--url='))                             issues.push('Missing --url=');
+    if (!cmd.includes('--goal='))                            issues.push('Missing --goal=');
     if (!cmd.includes('do not perform any further actions')) issues.push('Missing halt clause');
-    if (!/\d+\./.test(cmd) === false)                 issues.push('Numbered steps detected');
     const isValid = issues.length === 0;
     showValidationBadge(isValid, issues);
   }
@@ -218,6 +413,33 @@
   // ── Run ────────────────────────────────────────────────────────────────────
   function handleRun() {
     if (isRunning) return;
+    validatePlaceholders();
+  }
+
+  function validatePlaceholders() {
+    const empty = placeholders.filter(function (p) {
+      return p.currentValue.trim() === '';
+    });
+
+    if (empty.length > 0) {
+      const tokens = empty.map(function (p) { return p.token; }).join(', ');
+      showWarningBanner(tokens + (empty.length === 1 ? ' is' : ' are') + ' empty. Script will run with empty values.');
+    } else {
+      doRun();
+    }
+  }
+
+  function showWarningBanner(msg) {
+    warningText.textContent = msg;
+    emptyPlaceholderWarning.classList.remove('hidden');
+    emptyPlaceholderWarning.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  function hideWarningBanner() {
+    emptyPlaceholderWarning.classList.add('hidden');
+  }
+
+  function doRun() {
     const goalLine = commandBox.textContent.trim();
     if (!goalLine) return;
 
@@ -292,7 +514,6 @@
     const now  = new Date();
     const time = now.toTimeString().substring(0, 8);
 
-    // Remove placeholder if present
     const placeholder = logPanel.querySelector('.log-placeholder');
     if (placeholder) placeholder.remove();
 
@@ -329,7 +550,7 @@
   };
 
   function setStatus(value) {
-    statusDot.className  = 'status-dot status-' + value;
+    statusDot.className    = 'status-dot status-' + value;
     statusText.textContent = STATUS_LABELS[value] || value;
   }
 
@@ -364,14 +585,12 @@
   }
 
   function showError(msg) {
-    // Toast
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = msg;
     toastContainer.appendChild(toast);
     setTimeout(function () { toast.remove(); }, 5000);
 
-    // Also log if log section is visible
     if (!sectionLog.classList.contains('locked')) {
       appendLog('ERROR: ' + msg, 'error');
     }
