@@ -10,6 +10,11 @@ build/
 # Playwright browser downloads
 ~/.cache/ms-playwright/
 
+agent-run.jsonl
+
+/src/main/resources/Frames
+/bin/
+
 # Secrets — never commit the real properties file if it contains credentials
 # (check in application.properties.example instead)
 # src/main/resources/application.properties

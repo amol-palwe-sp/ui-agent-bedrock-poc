@@ -152,3 +152,23 @@ The LLM returns a JSON plan; supported actions:
 | `ClassNotFoundException: sso…` | Run `aws sso login`; SSO SDK modules are on the classpath |
 | Chromium won't start | Try `browser.headless=true`; or install deps: `npx playwright install-deps chromium` |
 | No elements found | Page may use web components / shadow DOM — try scrolling or waiting via a WAIT action |
+
+
+runVideo - Video to script
+```
+./gradlew runVideo --args='--video=/path/to/recording.mp4'
+
+# With options:
+./gradlew runVideo --args='--video=/path/to/recording.mp4 --debug-frames=./debug_frames --max-frames=60 --url=https://example.com'
+```
+
+run - Script to end automation
+```
+./gradlew run --args='--url=https://admin.google.com/ac/users --goal=click Sign in with Google button, then enter "amol@sptechdev.com" in the Email or phone field, then click Next button, then enter "GOOGLE@S09u@M09u" in the Password field, then click Next button, then click Admin icon, then click Directory, then click Users, then click Add user, then enter "John Doe" in the Name field, then click on Primary email field and then click ADD NEW USER button, then this completes all steps — do not perform any further actions'
+```
+
+Run POC Application
+```
+./gradlew runUI
+# opens http://localhost:8080 automatically
+```
