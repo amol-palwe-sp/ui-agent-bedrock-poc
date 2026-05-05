@@ -117,4 +117,35 @@ public final class PocConfig {
     public int interActionDelayMs() {
         return Integer.parseInt(optional("browser.inter.action.delay.ms", "0"));
     }
+
+    // --- Video frame extraction ---
+
+    public int videoMaxFrames() {
+        return Integer.parseInt(optional("video.max.frames", "80"));
+    }
+
+    public double videoChangeThreshold() {
+        return Double.parseDouble(optional("video.change.threshold", "0.02"));
+    }
+
+    public double videoMinGapSeconds() {
+        return Double.parseDouble(optional("video.min.gap.seconds", "0.5"));
+    }
+
+    /** Returns the debug-frames directory path, or an empty string when disabled. */
+    public String videoDebugFramesDir() {
+        return optional("video.debug.frames.dir", "");
+    }
+
+    // --- Account Aggregation ---
+
+    /** Maximum number of pages the aggregation loop will scrape before stopping. */
+    public int aggregationMaxPages() {
+        return Integer.parseInt(optional("aggregation.max.pages", "50"));
+    }
+
+    /** Directory where aggregation CSV files are written. */
+    public String aggregationOutputDir() {
+        return optional("aggregation.output.dir", "./output");
+    }
 }

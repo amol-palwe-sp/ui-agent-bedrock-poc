@@ -172,3 +172,18 @@ Run POC Application
 ./gradlew runUI
 # opens http://localhost:8080 automatically
 ```
+
+Run Aggregation
+step 1
+```
+./gradlew runAggregationPlan \
+  --args='--video=/path/to/Google_Aggregation.mp4 --url=https://admin.google.com/ac/users'
+```
+
+step 2
+```
+./gradlew runAggregation \
+  --args='--plan=./output/aggregation-plan_20260430_140000.json \
+          --url=https://admin.google.com/ac/users \
+          --goal=enter "amol@sptechdev.com" in the Email field, then click Next, then enter "GOOGLE@S09u@M09u" in the password field, then click Next'
+```
