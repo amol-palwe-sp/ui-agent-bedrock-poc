@@ -52,8 +52,9 @@
   const statsTotalRows         = document.getElementById('statsTotalRows');
   const statsPagesScraped      = document.getElementById('statsPagesScraped');
   const statsColumns           = document.getElementById('statsColumns');
-  const csvPathDisplay         = document.getElementById('csvPathDisplay');
-  const csvPathText            = document.getElementById('csvPathText');
+  const downloadRow            = document.getElementById('downloadRow');
+  const btnDownloadCsv         = document.getElementById('btnDownloadCsv');
+  const downloadFileInfo       = document.getElementById('downloadFileInfo');
   const previewTableWrapper    = document.getElementById('previewTableWrapper');
   const previewTableHead       = document.getElementById('previewTableHead');
   const previewTableBody       = document.getElementById('previewTableBody');
@@ -77,6 +78,7 @@
       doRun();
     });
     btnGoBack.addEventListener('click', hideWarningBanner);
+    btnDownloadCsv.addEventListener('click', handleDownload);
   });
 
   // ── Drop Zone ──────────────────────────────────────────────────────────────
@@ -424,6 +426,8 @@
     setStatus('running');
     btnRun.disabled = true;
     btnStop.classList.remove('hidden');
+    downloadRow.classList.add('hidden');
+    downloadFileInfo.textContent = '';
     unlockSection(sectionLog);
     sectionLog.scrollIntoView({ behavior: 'smooth' });
     clearLog();
@@ -447,6 +451,38 @@
       .catch(function (err) {
         showError(err.message);
         resetRunState();
+      });
+  }
+
+  function handleDownload() {
+    btnDownloadCsv.disabled = true;
+    btnDownloadCsv.classList.add('downloading');
+    btnDownloadCsv.innerHTML = '<span class="download-icon">⏳</span> Downloading...';
+
+    fetch('/api/aggregation/download')
+      .then(function (r) {
+        if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || r.statusText); });
+        return r.blob();
+      })
+      .then(function (blob) {
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        const info = downloadFileInfo.textContent || '';
+        a.download = info.split('·')[0].trim() || 'accounts.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        btnDownloadCsv.innerHTML = '<span class="download-icon">⬇</span> Download CSV';
+      })
+      .catch(function (err) {
+        showError('Download failed: ' + err.message);
+        btnDownloadCsv.innerHTML = '<span class="download-icon">⬇</span> Download CSV';
+      })
+      .finally(function () {
+        btnDownloadCsv.disabled = false;
+        btnDownloadCsv.classList.remove('downloading');
       });
   }
 
@@ -556,10 +592,13 @@
             : '';
     statsBar.classList.remove('hidden');
 
-    // CSV path
+    // Download button
     if (data.csvPath) {
-      csvPathText.textContent = data.csvPath;
-      csvPathDisplay.classList.remove('hidden');
+      const parts    = data.csvPath.replace(/\\/g, '/').split('/');
+      const filename = parts[parts.length - 1];
+      const rowCount = (stats.totalRows || 0).toLocaleString();
+      downloadFileInfo.textContent = filename + '  ·  ' + rowCount + ' rows';
+      downloadRow.classList.remove('hidden');
     }
 
     // Token usage

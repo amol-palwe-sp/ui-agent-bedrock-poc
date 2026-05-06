@@ -146,7 +146,8 @@ public final class AggregationPlanRunner {
                     actionLogger,
                     config.agentMaxSteps(),
                     videoAnalysis.navigationGoal(),
-                    config.agentNoProgressLimit());
+                    config.agentNoProgressLimit())
+                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
             agentLoop.run();
 
             System.out.println();

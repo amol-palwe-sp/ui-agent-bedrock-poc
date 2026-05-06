@@ -97,19 +97,44 @@
   margin-left: auto;
 }
 
-.csv-path {
+/* Download row (replaces csv-path display) */
+.download-row {
   display: flex;
   align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.btn-download {
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  background: #1a7340;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 22px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn-download:hover    { background: #145c33; }
+.btn-download:active   { transform: scale(0.98); }
+.btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-download.downloading {
+  background: #145c33;
+  cursor: wait;
+}
+
+.download-icon { font-size: 16px; }
+
+.download-file-info {
   font-size: 13px;
   color: var(--text-muted);
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: #f8f9fa;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  word-break: break-all;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
 }
 
 /* Preview table */

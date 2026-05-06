@@ -153,7 +153,8 @@ public final class AggregationRunHandler implements HttpHandler {
                     AgentLoop loop = new AgentLoop(
                             bedrock, browser, actionLogger,
                             config.agentMaxSteps(), finalGoal,
-                            config.agentNoProgressLimit());
+                            config.agentNoProgressLimit())
+                            .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
                     loop.run();
 
                     // Phase 3 — Detect table

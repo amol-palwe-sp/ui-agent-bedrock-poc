@@ -201,7 +201,8 @@ public final class AggregationRunner {
                     bedrock, browser, actionLogger,
                     config.agentMaxSteps(),
                     effectiveGoal,
-                    config.agentNoProgressLimit());
+                    config.agentNoProgressLimit())
+                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
             agentLoop.run();
 
             System.out.println();

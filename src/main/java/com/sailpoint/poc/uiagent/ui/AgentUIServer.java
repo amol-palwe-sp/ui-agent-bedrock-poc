@@ -56,7 +56,8 @@ public final class AgentUIServer {
         server.createContext("/api/aggregation/run",      new AggregationRunHandler(aggregationState));
         server.createContext("/api/aggregation/stop",     new AggregationRunHandler.StopHandler(aggregationState));
         server.createContext("/api/aggregation/stream",   new AggregationStreamHandler(aggregationState));
-        server.createContext("/api/aggregation/preview",  new AggregationPreviewHandler(aggregationState));
+        server.createContext("/api/aggregation/preview",   new AggregationPreviewHandler(aggregationState));
+        server.createContext("/api/aggregation/download",  new AggregationDownloadHandler(aggregationState));
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(1)));
 

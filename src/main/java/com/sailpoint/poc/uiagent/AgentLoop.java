@@ -38,7 +38,11 @@ public final class AgentLoop {
               placeholder, current value, visible label, and — for <select> — its options).
               The id is stable for THIS observation only; it changes after the page navigates
               or re-renders.
-            - A viewport screenshot of the page (when visual state may have changed).
+            - A viewport screenshot of the page (when visual state may have changed). On
+              new pages or after navigation you may receive MULTIPLE images — vertical tiles
+              of the SAME page from top to bottom. Use them together to understand the full
+              page layout (long forms, multi-section pages). Element ids in the list below
+              are valid even when the corresponding element is in a lower tile.
             - A short feedback log of what the previous steps actually did: key successes
               (CLICK, TYPE, SELECT_OPTION, CHECK, HOVER), failures, and navigation events.
               Use this log to know which actions are already done — do NOT repeat them.
@@ -141,6 +145,13 @@ public final class AgentLoop {
     private final String                 userGoal;
     private final int                    noProgressLimit;
 
+    /**
+     * Number of viewport-tiled screenshots to capture on page-shape-changing observations
+     * (INIT / GOTO / RELOAD_PAGE).  Default {@code 1} = current single-viewport behaviour.
+     * Callers opt in via {@link #setMultiViewportMaxFrames(int)}.
+     */
+    private int multiViewportMaxFrames = 1;
+
     public AgentLoop(
             BedrockAnthropicClient bedrock,
             BrowserSession browser,
@@ -154,6 +165,16 @@ public final class AgentLoop {
         this.maxSteps         = maxSteps;
         this.userGoal         = userGoal;
         this.noProgressLimit  = noProgressLimit > 0 ? noProgressLimit : 3;
+    }
+
+    /**
+     * Enables multi-viewport screenshot tiling on page-shape-changing observations so the LLM
+     * can see a tall page (long forms) in one observation.  Pass {@code 0} or {@code 1} to keep
+     * the default single-viewport behaviour.
+     */
+    public AgentLoop setMultiViewportMaxFrames(int maxFrames) {
+        this.multiViewportMaxFrames = Math.max(1, maxFrames);
+        return this;
     }
 
     public void run() throws Exception {
@@ -170,22 +191,43 @@ public final class AgentLoop {
             JSONArray elements    = browser.listInteractables();
             String    elementText = browser.formatElementsForPrompt(elements);
 
-            // Only capture a screenshot when visual state may have changed.
-            byte[] screenshot = new byte[0];
+            // Decide screenshot strategy.
+            //   - PAGE_SHAPE_CHANGED (INIT / GOTO / RELOAD_PAGE) → multi-viewport tiles
+            //     (when enabled) so the LLM sees the whole tall page at once.
+            //   - Other visual-changing actions (CLICK, TYPE, SCROLL, …) → single viewport;
+            //     fast and cheap, the page shape hasn't changed.
+            //   - WAIT and similar → no screenshot at all.
+            List<byte[]> screenshots = java.util.Collections.emptyList();
             if (shouldTakeScreenshot(lastActionType)) {
-                screenshot = browser.viewportScreenshotJpeg(70);
-                System.out.printf("  [Screenshot] JPEG taken (%d KB)%n", screenshot.length / 1024);
+                if (multiViewportMaxFrames > 1 && isPageShapeChange(lastActionType)) {
+                    screenshots = browser.viewportScrollScreenshotsJpeg(multiViewportMaxFrames, 70);
+                    int totalKb = 0;
+                    for (byte[] s : screenshots) totalKb += s.length;
+                    System.out.printf("  [Screenshot] %d viewport tiles (%d KB total)%n",
+                            screenshots.size(), totalKb / 1024);
+                } else {
+                    byte[] single = browser.viewportScreenshotJpeg(70);
+                    if (single.length > 0) screenshots = java.util.List.of(single);
+                    System.out.printf("  [Screenshot] JPEG taken (%d KB)%n", single.length / 1024);
+                }
             } else {
                 System.out.println("  [Screenshot] Skipped (last action=" + lastActionType + ")");
             }
 
-            String userMessage = buildUserMessage(step, elementText, history);
+            boolean multiViewport = screenshots.size() > 1;
+            String userMessage = buildUserMessage(step, elementText, history, multiViewport, screenshots.size());
 
             System.out.println("--- Step " + (step + 1) + " / " + maxSteps + " ---");
             System.out.println("URL: " + browser.currentUrl());
             System.out.println("Indexed elements: " + elements.length());
 
-            InvokeResult invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, screenshot);
+            InvokeResult invokeResult;
+            if (multiViewport) {
+                invokeResult = bedrock.invokeWithMultipleImages(SYSTEM_PROMPT, userMessage, screenshots);
+            } else {
+                byte[] single = screenshots.isEmpty() ? new byte[0] : screenshots.get(0);
+                invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, single);
+            }
 
             TokenUsage stepUsage = invokeResult.usage();
             totalUsage = totalUsage.add(stepUsage);
@@ -271,6 +313,20 @@ public final class AgentLoop {
         };
     }
 
+    /**
+     * True when the last action almost certainly produced an entirely new page layout
+     * (initial load, navigation, or full reload).  These are the only actions where
+     * paying for multi-viewport screenshot tiles is worth it; CLICK / TYPE / SCROLL stay
+     * cheap with a single viewport tile.
+     */
+    private static boolean isPageShapeChange(String lastAction) {
+        if (lastAction == null) return true;
+        return switch (lastAction.toUpperCase()) {
+            case "INIT", "GOTO", "RELOAD_PAGE" -> true;
+            default -> false;
+        };
+    }
+
     private static String getLastActionType(JSONArray actions) {
         if (actions == null || actions.isEmpty()) return "UNKNOWN";
         int lastIdx = Math.min(actions.length(), MAX_ACTIONS_PER_BATCH) - 1;
@@ -283,10 +339,20 @@ public final class AgentLoop {
         System.out.println("========================================");
     }
 
-    private String buildUserMessage(int step, String elementText, List<String> history) {
+    private String buildUserMessage(int step, String elementText, List<String> history,
+                                    boolean multiViewport, int screenshotCount) {
         StringBuilder sb = new StringBuilder();
         sb.append("User goal:\n").append(userGoal).append("\n\n");
         sb.append("Current URL:\n").append(browser.currentUrl()).append("\n\n");
+        if (multiViewport) {
+            sb.append("Screenshots (").append(screenshotCount).append(" tiles):\n")
+              .append("The attached images are vertical slices of the SAME page from top to bottom.\n")
+              .append("Image 1 = top of page, image ").append(screenshotCount)
+              .append(" = bottom. Use them together to understand the full page layout — locate\n")
+              .append("the field, dropdown, or submit button you need, then act on the matching\n")
+              .append("element_id from the list below (element ids are valid even when an element\n")
+              .append("appears in a lower tile that is currently below the visible viewport).\n\n");
+        }
         sb.append("Interactable elements (use element_id matching [n]):\n").append(elementText).append('\n');
         if (!history.isEmpty()) {
             sb.append("Previous step feedback (do NOT repeat actions marked ✓):\n");

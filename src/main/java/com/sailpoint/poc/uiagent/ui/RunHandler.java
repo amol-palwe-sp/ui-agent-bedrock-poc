@@ -103,7 +103,8 @@ public final class RunHandler implements HttpHandler {
                     AgentLoop loop = new AgentLoop(
                             bedrock, browser, actionLogger,
                             config.agentMaxSteps(), finalGoal,
-                            config.agentNoProgressLimit());
+                            config.agentNoProgressLimit())
+                            .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
                     loop.run();
                 }
                 state.logQueue.offer("STATUS:ready");
