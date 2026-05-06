@@ -188,55 +188,113 @@
   }
 
   function extractPlaceholders(rawSteps) {
-    const ENTER_RE = /enter "([^"]+)" in (?:the )?(.+?) field/i;
-    const tokenCounts = {};   // token → count (for deduplication)
+    const ENTER_RE    = /enter "([^"]+)" in (?:the )?(.+?) field/i;
+    const CHECKBOX_RE = /check the (.+?) checkbox/i;
+    const SELECT_RE   = /select "([^"]+)" from (?:the )?(.+?) dropdown/i;
+
+    const tokenCounts = {};   // baseToken → count (for deduplication)
     const tokenizedSteps = [];
     const placeholderList = [];
-    const seenValues = {};    // value+label → token (avoid duplicates)
+    const seenValues = {};    // cacheKey → token (avoid duplicates)
 
     rawSteps.forEach(function (step) {
-      const m = ENTER_RE.exec(step);
-      if (!m) {
-        tokenizedSteps.push(step);
+
+      // ── Pattern 1: enter "VALUE" in the LABEL field ────────────────────────
+      const m1 = ENTER_RE.exec(step);
+      if (m1) {
+        const value    = m1[1];
+        const label    = m1[2];
+        const cacheKey = 'enter::' + label.toLowerCase() + '::' + value;
+
+        if (seenValues[cacheKey]) {
+          tokenizedSteps.push(step.replace('"' + value + '"', seenValues[cacheKey]));
+          return;
+        }
+
+        const baseToken  = labelToToken(label);
+        tokenCounts[baseToken] = (tokenCounts[baseToken] || 0) + 1;
+        const count = tokenCounts[baseToken];
+        const token = '{' + baseToken + (count > 1 ? count : '') + '}';
+
+        const isPassword = /password/i.test(baseToken);
+        const isEmail    = /email/i.test(baseToken);
+
+        placeholderList.push({
+          token:        token,
+          label:        label.trim(),
+          defaultValue: value,
+          currentValue: value,
+          inputType:    isPassword ? 'password' : (isEmail ? 'email' : 'text'),
+          isPassword:   isPassword,
+        });
+        seenValues[cacheKey] = token;
+        tokenizedSteps.push(step.replace('"' + value + '"', token));
         return;
       }
 
-      const value = m[1];
-      const label = m[2];
-      const cacheKey = label.toLowerCase() + '::' + value;
+      // ── Pattern 2: check the LABEL checkbox ────────────────────────────────
+      const m2 = CHECKBOX_RE.exec(step);
+      if (m2) {
+        const label    = m2[1];
+        const cacheKey = 'checkbox::' + label.toLowerCase();
 
-      if (seenValues[cacheKey]) {
-        // Reuse same token for identical value+label
-        const tokenizedStep = step.replace(
-          '"' + value + '"',
-          seenValues[cacheKey]
-        );
-        tokenizedSteps.push(tokenizedStep);
+        if (seenValues[cacheKey]) {
+          tokenizedSteps.push(step.replace('the ' + label + ' checkbox',
+                                           'the ' + seenValues[cacheKey] + ' checkbox'));
+          return;
+        }
+
+        const baseToken = labelToToken(label) + 'Checkbox';
+        tokenCounts[baseToken] = (tokenCounts[baseToken] || 0) + 1;
+        const count = tokenCounts[baseToken];
+        const token = '{' + baseToken + (count > 1 ? count : '') + '}';
+
+        placeholderList.push({
+          token:        token,
+          label:        label.trim(),
+          defaultValue: label.trim(),
+          currentValue: label.trim(),
+          inputType:    'text',
+          isPassword:   false,
+        });
+        seenValues[cacheKey] = token;
+        tokenizedSteps.push(step.replace('the ' + label + ' checkbox',
+                                         'the ' + token + ' checkbox'));
         return;
       }
 
-      let baseToken = labelToToken(label);
-      tokenCounts[baseToken] = (tokenCounts[baseToken] || 0) + 1;
-      const count = tokenCounts[baseToken];
-      const token = '{' + baseToken + (count > 1 ? count : '') + '}';
+      // ── Pattern 3: select "VALUE" from the LABEL dropdown ──────────────────
+      const m3 = SELECT_RE.exec(step);
+      if (m3) {
+        const value    = m3[1];
+        const label    = m3[2];
+        const cacheKey = 'select::' + label.toLowerCase() + '::' + value;
 
-      const isPassword = /password/i.test(baseToken);
-      const isEmail    = /email/i.test(baseToken);
+        if (seenValues[cacheKey]) {
+          tokenizedSteps.push(step.replace('"' + value + '"', seenValues[cacheKey]));
+          return;
+        }
 
-      const ph = {
-        token:        token,
-        label:        label.trim(),
-        defaultValue: value,
-        currentValue: value,
-        inputType:    isPassword ? 'password' : (isEmail ? 'email' : 'text'),
-        isPassword:   isPassword,
-      };
+        const baseToken = labelToToken(label);
+        tokenCounts[baseToken] = (tokenCounts[baseToken] || 0) + 1;
+        const count = tokenCounts[baseToken];
+        const token = '{' + baseToken + (count > 1 ? count : '') + '}';
 
-      placeholderList.push(ph);
-      seenValues[cacheKey] = token;
+        placeholderList.push({
+          token:        token,
+          label:        label.trim(),
+          defaultValue: value,
+          currentValue: value,
+          inputType:    'text',
+          isPassword:   false,
+        });
+        seenValues[cacheKey] = token;
+        tokenizedSteps.push(step.replace('"' + value + '"', token));
+        return;
+      }
 
-      const tokenizedStep = step.replace('"' + value + '"', token);
-      tokenizedSteps.push(tokenizedStep);
+      // ── No pattern matched — pass through unchanged ─────────────────────────
+      tokenizedSteps.push(step);
     });
 
     return { tokenizedSteps: tokenizedSteps, placeholders: placeholderList };
