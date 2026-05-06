@@ -26,11 +26,12 @@ public final class AgentUIServer {
 
     public static void main(String[] args) throws Exception {
         ServerState state = new ServerState();
+        AggregationServerState aggregationState = new AggregationServerState();
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.setExecutor(Executors.newCachedThreadPool());
 
-        // Static assets
+        // Static assets — Agent Run tab
         server.createContext("/",            new StaticHandler("index.html", "text/html"));
         server.createContext("/style.css",   new StaticHandler("style.css",  "text/css"));
         server.createContext("/app.js",      new StaticHandler("app.js",     "application/javascript"));
@@ -38,12 +39,24 @@ public final class AgentUIServer {
         server.createContext("/favicon.png", new StaticHandler("favicon.png", "image/png"));
         server.createContext("/favicon.ico", new StaticHandler("favicon.png", "image/png"));
 
-        // API
+        // Static assets — Aggregation tab
+        server.createContext("/aggregation",     new StaticHandler("aggregation.html", "text/html"));
+        server.createContext("/aggregation.js",  new StaticHandler("aggregation.js",   "application/javascript"));
+        server.createContext("/aggregation.css", new StaticHandler("aggregation.css",  "text/css"));
+
+        // API — Agent Run tab
         server.createContext("/api/stream",   new StreamHandler(state));
         server.createContext("/api/generate", new GenerateHandler(state));
         server.createContext("/api/run",      new RunHandler(state));
         server.createContext("/api/stop",     new RunHandler.StopHandler(state));
         server.createContext("/api/status",   new StatusHandler(state));
+
+        // API — Aggregation tab
+        server.createContext("/api/aggregation/generate", new AggregationGenerateHandler(aggregationState));
+        server.createContext("/api/aggregation/run",      new AggregationRunHandler(aggregationState));
+        server.createContext("/api/aggregation/stop",     new AggregationRunHandler.StopHandler(aggregationState));
+        server.createContext("/api/aggregation/stream",   new AggregationStreamHandler(aggregationState));
+        server.createContext("/api/aggregation/preview",  new AggregationPreviewHandler(aggregationState));
 
         Runtime.getRuntime().addShutdownHook(new Thread(() -> server.stop(1)));
 
