@@ -83,16 +83,56 @@ public final class AgentLoop {
               next attempt (different element_id, HOVER to reveal first, RELOAD_PAGE if stuck).
             - Valid types: GOTO, CLICK, TYPE, SELECT_OPTION, KEYPRESS, SCROLL, HOVER, CHECK,
               RELOAD_PAGE, WAIT, DONE, TERMINATE.
+
+            Action priority on long forms (CRITICAL — read carefully):
+            1. ALWAYS prefer ACTING on a visible element over SCROLLING. Before emitting a
+               SCROLL, scan the numbered elements list for the target by name / label /
+               placeholder / option text. If you find a match, emit the corresponding
+               TYPE / CLICK / SELECT_OPTION / CHECK action immediately on that element_id —
+               do NOT scroll first to "verify visually". Element ids are valid even when
+               the element is partially below the visible viewport.
+            2. Submit / Create / Save / Confirm / Apply buttons on long forms are typically
+               at the BOTTOM of the form, not the top. After all required fields are filled
+               (per the feedback log), scroll DOWN to find the submit button. Do NOT scroll
+               UP looking for it.
+            3. Anti-oscillation: if your last 2 actions in the feedback log are both SCROLL
+               and you have not acted on a field since, your next action MUST be one of:
+                 (a) act on a visible element from the indexed list, OR
+                 (b) continue scrolling in the SAME direction.
+               Do NOT reverse scroll direction unless the screenshot clearly shows the
+               target element ABOVE the current viewport.
+            4. Trust the feedback log for completion. If "s_N: SELECT_OPTION ✓",
+               "s_N: TYPE ✓", "s_N: CHECK ✓", or similar appears in the log for a field,
+               that field is DONE — never re-verify by scrolling back to look at it.
+               Move on to the next unfilled step in the goal.
+            5. Dropdown discipline: when the goal says "select X from the Y dropdown" and
+               an element with role/select matching Y appears in the elements list, issue
+               SELECT_OPTION on that element immediately. Do not scroll past a visible
+               dropdown looking for "a better one".
             """;
 
     private static final int MAX_ACTIONS_PER_BATCH  = 3;
-    private static final int MAX_HISTORY_LINES      = 6;
+    private static final int MAX_HISTORY_LINES      = 12;
     /**
      * Maximum times the same action+element_id pair may succeed before it is considered a loop.
      * The map is cleared on every page navigation so elements that re-appear on a fresh page are
      * not accidentally blocked.
      */
     private static final int MAX_SAME_ACTION_REPEATS = 2;
+
+    /**
+     * Action types excluded from the repeat-loop guard entirely.
+     *
+     * <p>SCROLL, WAIT, and RELOAD_PAGE all have no meaningful {@code element_id} (they always
+     * map to {@code -1}), so the guard key is identical for every invocation regardless of
+     * direction, amount, or purpose.  Blocking them after two occurrences incorrectly kills
+     * legitimate long-form workflows that require multiple scrolls or waits.
+     *
+     * <p>URL-level progress tracking ({@code noProgressStreak}) still catches agents that are
+     * genuinely stuck scrolling or waiting forever on the same page.
+     */
+    private static final java.util.Set<String> LOOP_GUARD_EXCLUDED_TYPES =
+            java.util.Set.of("SCROLL", "WAIT", "RELOAD_PAGE");
 
     private final BedrockAnthropicClient bedrock;
     private final BrowserSession         browser;
@@ -220,9 +260,13 @@ public final class AgentLoop {
                  "HOVER", "CHECK", "RELOAD_PAGE",
                  // Bug 3 fix: TYPE changes the field value visually; without a screenshot the
                  // LLM has no confirmation the text landed and will repeat the TYPE next step.
-                 "TYPE" -> true;
-            // Pure positional / temporal actions — no meaningful visual diff.
-            case "SCROLL", "WAIT" -> false;
+                 "TYPE",
+                 // Scroll fix: on long forms, scrolling reveals entirely different sections of
+                 // the page. Without a screenshot after scroll the agent is blind to what is
+                 // now visible and falls back to stale history, causing ↑↓ oscillation loops.
+                 "SCROLL" -> true;
+            // WAIT genuinely does not change visual state — keep it skipped.
+            case "WAIT" -> false;
             default -> true; // unknown — safe to screenshot
         };
     }
@@ -254,7 +298,8 @@ public final class AgentLoop {
 
     /** Action types whose successes are worth recording so the LLM doesn't repeat them. */
     private static final java.util.Set<String> HISTORY_WORTHY_TYPES = java.util.Set.of(
-            "CLICK", "TYPE", "SELECT_OPTION", "CHECK", "HOVER", "KEYPRESS");
+            "CLICK", "TYPE", "SELECT_OPTION", "CHECK", "HOVER", "KEYPRESS",
+            "SCROLL");  // scroll history lets the LLM self-detect ↑↓ oscillation patterns
 
     private BatchOutcome executeActions(
             JSONArray actions,
@@ -300,7 +345,7 @@ public final class AgentLoop {
             int elementId = a.optInt("element_id", -1);
             String actionKey = type + ":" + elementId;
             int priorRepeats = actionRepeatCounts.getOrDefault(actionKey, 0);
-            if (priorRepeats >= MAX_SAME_ACTION_REPEATS) {
+            if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type) && priorRepeats >= MAX_SAME_ACTION_REPEATS) {
                 String loopMsg = "s" + step + ": LOOP DETECTED — " + type
                         + (elementId >= 0 ? " id=" + elementId : "")
                         + " already done " + priorRepeats + "x — move on to the next step";
@@ -330,7 +375,11 @@ public final class AgentLoop {
             if (ok) {
                 hadSuccess = true;
                 // Increment repeat counter only on success — failed actions shouldn't count.
-                actionRepeatCounts.put(actionKey, priorRepeats + 1);
+                // SCROLL, WAIT, and RELOAD_PAGE are excluded: they have no meaningful element_id
+                // so their key is always the same, causing false loop detection on long forms.
+                if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type)) {
+                    actionRepeatCounts.put(actionKey, priorRepeats + 1);
+                }
 
                 // Bug 4: Log key successes so the LLM knows they're already done.
                 if (HISTORY_WORTHY_TYPES.contains(type)) {
