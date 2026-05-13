@@ -177,7 +177,7 @@ public final class AgentLoop {
         return this;
     }
 
-    public void run() throws Exception {
+    public TokenUsage run() throws Exception {
         List<String>        history          = new ArrayList<>();
         TokenUsage          totalUsage       = TokenUsage.ZERO;
         String              lastActionType   = "INIT"; // forces screenshot on first step
@@ -282,12 +282,13 @@ public final class AgentLoop {
             if (outcome.stop() || goalAchieved) {
                 System.out.println("Stopped after goal achieved or terminal action.");
                 printTotalUsage(totalUsage);
-                return;
+                return totalUsage;
             }
         }
 
         System.out.println("Max steps reached without explicit DONE.");
         printTotalUsage(totalUsage);
+        return totalUsage;
     }
 
     // -------------------------------------------------------------------------

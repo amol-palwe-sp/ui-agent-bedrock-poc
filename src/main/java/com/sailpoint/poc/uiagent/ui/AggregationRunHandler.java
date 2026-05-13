@@ -155,7 +155,7 @@ public final class AggregationRunHandler implements HttpHandler {
                             config.agentMaxSteps(), finalGoal,
                             config.agentNoProgressLimit())
                             .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-                    loop.run();
+                    TokenUsage loopUsage = loop.run();
 
                     // Phase 3 — Detect table
                     state.logQueue.offer("LOG:INFO:Detecting accounts table...");
@@ -178,7 +178,8 @@ public final class AggregationRunHandler implements HttpHandler {
                     List<Map<String, String>> allRows =
                             aggregator.paginationLoop(tableResult, finalPagination, maxPages);
                     int pagesScraped = aggregator.pagesScraped();
-                    TokenUsage usage = aggregator.accumulatedUsage();
+                    // Combine AgentLoop navigation tokens + AccountAggregator scraping tokens
+                    TokenUsage usage = loopUsage.add(aggregator.accumulatedUsage());
 
                     state.logQueue.offer("LOG:INFO:Scraped " + pagesScraped
                             + " page(s), " + allRows.size() + " total rows");

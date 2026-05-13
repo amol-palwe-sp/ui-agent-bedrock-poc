@@ -34,6 +34,7 @@
   const btnCopy                = document.getElementById('btnCopy');
   const validationBadge        = document.getElementById('validationBadge');
   const tokenInfo              = document.getElementById('tokenInfo');
+  const execTokenInfo          = document.getElementById('execTokenInfo');
   const btnRun                 = document.getElementById('btnRun');
   const sectionLog             = document.getElementById('sectionLog');
   const logPanel               = document.getElementById('logPanel');
@@ -505,6 +506,8 @@
     setStatus('running');
     btnRun.disabled = true;
     btnStop.classList.remove('hidden');
+    execTokenInfo.classList.add('hidden');
+    execTokenInfo.textContent = '';
     unlockSection(sectionLog);
     sectionLog.scrollIntoView({ behavior: 'smooth' });
     clearLog();
@@ -553,11 +556,12 @@
       try { data = JSON.parse(e.data); } catch (_) { return; }
 
       switch (data.type) {
-        case 'log':      appendLog(data.text, data.level);   break;
-        case 'status':   setStatus(data.value);              break;
-        case 'progress': updateProgress(data);               break;
-        case 'done':     handleDone(data.exitCode);          break;
-        case 'error':    showError(data.message);            break;
+        case 'log':         appendLog(data.text, data.level);                                  break;
+        case 'status':      setStatus(data.value);                                             break;
+        case 'progress':    updateProgress(data);                                              break;
+        case 'done':        handleDone(data.exitCode);                                         break;
+        case 'error':       showError(data.message);                                           break;
+        case 'token_usage': showExecTokenInfo(data.inputTokens, data.outputTokens, data.costUsd); break;
       }
     };
 
@@ -636,10 +640,17 @@
   }
 
   function showTokenInfo(inputTok, outputTok, cost) {
-    const total = (inputTok || 0) + (outputTok || 0);
-    tokenInfo.textContent = 'Tokens: ' + total.toLocaleString()
+    tokenInfo.textContent = 'In: ' + (inputTok || 0).toLocaleString()
+                          + ' | Out: ' + (outputTok || 0).toLocaleString()
                           + ' | Cost: $' + (cost || 0).toFixed(4);
     tokenInfo.classList.remove('hidden');
+  }
+
+  function showExecTokenInfo(inputTok, outputTok, cost) {
+    execTokenInfo.textContent = 'In: ' + (inputTok || 0).toLocaleString()
+                              + ' | Out: ' + (outputTok || 0).toLocaleString()
+                              + ' | Cost: $' + (cost || 0).toFixed(4);
+    execTokenInfo.classList.remove('hidden');
   }
 
   function showError(msg) {

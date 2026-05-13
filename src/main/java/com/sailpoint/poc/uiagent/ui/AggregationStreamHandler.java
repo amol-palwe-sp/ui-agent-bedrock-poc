@@ -98,6 +98,14 @@ public final class AggregationStreamHandler implements HttpHandler {
         if (msg.startsWith("ERROR:")) {
             return "{\"type\":\"error\",\"message\":" + quoted(msg.substring(6)) + "}";
         }
+        if (msg.startsWith("TOKEN_USAGE:")) {
+            String[] parts = msg.substring(12).split(":", 3);
+            int inputTokens  = safeInt(parts, 0);
+            int outputTokens = safeInt(parts, 1);
+            double costUsd   = safeDouble(parts, 2);
+            return String.format("{\"type\":\"token_usage\",\"inputTokens\":%d,\"outputTokens\":%d,\"costUsd\":%.6f}",
+                    inputTokens, outputTokens, costUsd);
+        }
         if (msg.startsWith("AGGREGATION_DONE:")) {
             // AGGREGATION_DONE:<totalRows>:<csvPath>
             String payload = msg.substring("AGGREGATION_DONE:".length());
@@ -131,5 +139,10 @@ public final class AggregationStreamHandler implements HttpHandler {
     private static int safeInt(String[] parts, int idx) {
         try { return idx < parts.length ? Integer.parseInt(parts[idx].trim()) : 0; }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    private static double safeDouble(String[] parts, int idx) {
+        try { return idx < parts.length ? Double.parseDouble(parts[idx].trim()) : 0.0; }
+        catch (NumberFormatException e) { return 0.0; }
     }
 }

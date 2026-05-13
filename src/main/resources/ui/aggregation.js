@@ -603,8 +603,8 @@
 
     // Token usage
     if (stats.inputTokens !== undefined) {
-      const total = (stats.inputTokens || 0) + (stats.outputTokens || 0);
-      resultsTokenInfo.textContent = 'Tokens: ' + total.toLocaleString()
+      resultsTokenInfo.textContent = 'In: ' + (stats.inputTokens || 0).toLocaleString()
+              + ' | Out: ' + (stats.outputTokens || 0).toLocaleString()
               + ' | Cost: $' + (stats.costUsd || 0).toFixed(4);
       resultsTokenInfo.classList.remove('hidden');
     }
@@ -684,8 +684,8 @@
   }
 
   function showTokenInfo(inputTok, outputTok, cost) {
-    const total = (inputTok || 0) + (outputTok || 0);
-    tokenInfo.textContent = 'Tokens: ' + total.toLocaleString()
+    tokenInfo.textContent = 'In: ' + (inputTok || 0).toLocaleString()
+                          + ' | Out: ' + (outputTok || 0).toLocaleString()
                           + ' | Cost: $' + (cost || 0).toFixed(4);
     tokenInfo.classList.remove('hidden');
   }

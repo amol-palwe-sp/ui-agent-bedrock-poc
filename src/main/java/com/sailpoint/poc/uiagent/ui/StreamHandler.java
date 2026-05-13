@@ -23,8 +23,9 @@ import java.util.concurrent.TimeUnit;
  *   "LOG:STEP:text"      → { type:"log",      level:"step",    text:"..." }
  *   "STATUS:value"       → { type:"status",   value:"..." }
  *   "PROGRESS:N:M:label" → { type:"progress", current:N, total:M, label:"..." }
- *   "DONE:0|1"           → { type:"done",     exitCode:0|1 }
- *   "ERROR:message"      → { type:"error",    message:"..." }
+ *   "DONE:0|1"                      → { type:"done",        exitCode:0|1 }
+ *   "ERROR:message"                 → { type:"error",       message:"..." }
+ *   "TOKEN_USAGE:in:out:cost"       → { type:"token_usage", inputTokens:N, outputTokens:M, costUsd:X }
  * </pre>
  */
 public final class StreamHandler implements HttpHandler {
@@ -102,6 +103,15 @@ public final class StreamHandler implements HttpHandler {
             String message = msg.substring(6);
             return "{\"type\":\"error\",\"message\":" + quoted(message) + "}";
         }
+        if (msg.startsWith("TOKEN_USAGE:")) {
+            // TOKEN_USAGE:<inputTokens>:<outputTokens>:<costUsd>
+            String[] parts = msg.substring(12).split(":", 3);
+            int inputTokens  = safeInt(parts, 0);
+            int outputTokens = safeInt(parts, 1);
+            double costUsd   = safeDouble(parts, 2);
+            return String.format("{\"type\":\"token_usage\",\"inputTokens\":%d,\"outputTokens\":%d,\"costUsd\":%.6f}",
+                    inputTokens, outputTokens, costUsd);
+        }
         // Fallback — treat as info log
         return logJson("info", msg);
     }
@@ -120,5 +130,10 @@ public final class StreamHandler implements HttpHandler {
     private static int safeInt(String[] parts, int idx) {
         try { return idx < parts.length ? Integer.parseInt(parts[idx].trim()) : 0; }
         catch (NumberFormatException e) { return 0; }
+    }
+
+    private static double safeDouble(String[] parts, int idx) {
+        try { return idx < parts.length ? Double.parseDouble(parts[idx].trim()) : 0.0; }
+        catch (NumberFormatException e) { return 0.0; }
     }
 }
