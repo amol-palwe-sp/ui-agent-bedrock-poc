@@ -43,17 +43,17 @@ public final class ModelPricing {
         // ── Claude 4.x ───────────────────────────────────────────────────────
         // Opus 4.x  → $5.00 / 1M  = $0.005 / 1K
         if (m.contains("claude-opus-4")
-                || m.contains("claude-4-opus"))   return 0.005;
+         || m.contains("claude-4-opus"))   return 0.005;
 
         // Sonnet 4.x → $3.00 / 1M = $0.003 / 1K
         // Matches: claude-sonnet-4, claude-sonnet-4.5, claude-sonnet-4.6
         if (m.contains("claude-sonnet-4")
-                || m.contains("claude-4-sonnet")) return 0.003;
+         || m.contains("claude-4-sonnet")) return 0.003;
 
         // Haiku 4.x  → $1.00 / 1M = $0.001 / 1K
         // Matches: claude-haiku-4, claude-haiku-4.5
         if (m.contains("claude-haiku-4")
-                || m.contains("claude-4-haiku"))  return 0.001;
+         || m.contains("claude-4-haiku"))  return 0.001;
 
         // ── Claude 3.5.x ─────────────────────────────────────────────────────
         // Sonnet 3.5 → $3.00 / 1M = $0.003 / 1K
@@ -88,15 +88,15 @@ public final class ModelPricing {
         // ── Claude 4.x ───────────────────────────────────────────────────────
         // Opus 4.x   → $25.00 / 1M = $0.025 / 1K
         if (m.contains("claude-opus-4")
-                || m.contains("claude-4-opus"))   return 0.025;
+         || m.contains("claude-4-opus"))   return 0.025;
 
         // Sonnet 4.x → $15.00 / 1M = $0.015 / 1K
         if (m.contains("claude-sonnet-4")
-                || m.contains("claude-4-sonnet")) return 0.015;
+         || m.contains("claude-4-sonnet")) return 0.015;
 
         // Haiku 4.x  → $5.00 / 1M = $0.005 / 1K
         if (m.contains("claude-haiku-4")
-                || m.contains("claude-4-haiku"))  return 0.005;
+         || m.contains("claude-4-haiku"))  return 0.005;
 
         // ── Claude 3.5.x ─────────────────────────────────────────────────────
         // Sonnet 3.5 → $15.00 / 1M = $0.015 / 1K
@@ -122,13 +122,13 @@ public final class ModelPricing {
     }
 
     public static TokenUsage calculate(String modelId,
-                                       int inputTokens,
-                                       int outputTokens) {
+                                        int inputTokens,
+                                        int outputTokens) {
         double inputCost  = (inputTokens  / 1_000.0)
-                * inputPricePer1kTokens(modelId);
+                            * inputPricePer1kTokens(modelId);
         double outputCost = (outputTokens / 1_000.0)
-                * outputPricePer1kTokens(modelId);
+                            * outputPricePer1kTokens(modelId);
         return new TokenUsage(inputTokens, outputTokens,
-                inputCost, outputCost);
+                              inputCost, outputCost);
     }
 }

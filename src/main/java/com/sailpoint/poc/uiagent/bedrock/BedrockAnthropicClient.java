@@ -105,16 +105,35 @@ public final class BedrockAnthropicClient implements AutoCloseable {
         }
     }
 
+    /**
+     * Auto-detects whether {@code bytes} is a JPEG or PNG by inspecting its magic bytes.
+     * <ul>
+     *   <li>JPEG starts with {@code FF D8 FF}</li>
+     *   <li>PNG starts with {@code 89 50 4E 47} ({@code \x89PNG})</li>
+     * </ul>
+     * Defaults to {@code image/png} when the format cannot be determined.
+     */
+    private static String detectMediaType(byte[] bytes) {
+        if (bytes == null || bytes.length < 3) return "image/png";
+        if ((bytes[0] & 0xFF) == 0xFF
+                && (bytes[1] & 0xFF) == 0xD8
+                && (bytes[2] & 0xFF) == 0xFF) {
+            return "image/jpeg";
+        }
+        return "image/png";
+    }
+
     private JSONObject buildRequestBody(String systemPrompt, String userText, byte[] screenshotPng) {
         JSONArray userContent = new JSONArray();
 
         if (screenshotPng != null && screenshotPng.length > 0) {
             String b64 = Base64.getEncoder().encodeToString(screenshotPng);
+            String mediaType = detectMediaType(screenshotPng);
             userContent.put(new JSONObject()
                     .put("type", "image")
                     .put("source", new JSONObject()
                             .put("type", "base64")
-                            .put("media_type", "image/png")
+                            .put("media_type", mediaType)
                             .put("data", b64)));
         }
 
@@ -147,6 +166,94 @@ public final class BedrockAnthropicClient implements AutoCloseable {
             }
         }
         return out.length() > 0 ? out.toString() : responseBody.toString();
+    }
+
+    /**
+     * Invoke Claude with multiple images (e.g., video frames) and return both the assistant text and the token usage.
+     *
+     * @param systemPrompt the system prompt
+     * @param userText     the user text prompt
+     * @param images       ordered list of image bytes (PNG or JPEG)
+     * @return the invoke result containing text and token usage
+     */
+    public InvokeResult invokeWithMultipleImages(String systemPrompt, String userText, java.util.List<byte[]> images) {
+        JSONObject body = buildRequestBodyMultipleImages(systemPrompt, userText, images);
+
+        InvokeModelRequest request = InvokeModelRequest.builder()
+                .modelId(modelId)
+                .contentType("application/json")
+                .accept("application/json")
+                .body(SdkBytes.fromUtf8String(body.toString()))
+                .build();
+
+        try {
+            InvokeModelResponse response = client.invokeModel(request);
+            JSONObject responseJson = new JSONObject(response.body().asUtf8String());
+
+            String text = extractAssistantText(responseJson);
+
+            JSONObject usage = responseJson.optJSONObject("usage");
+            int inputTokens  = usage != null ? usage.optInt("input_tokens",  0) : 0;
+            int outputTokens = usage != null ? usage.optInt("output_tokens", 0) : 0;
+            TokenUsage tokenUsage = ModelPricing.calculate(modelId, inputTokens, outputTokens);
+
+            return new InvokeResult(text, tokenUsage);
+
+        } catch (ValidationException e) {
+            String msg = e.awsErrorDetails() != null ? e.awsErrorDetails().errorMessage() : String.valueOf(e.getMessage());
+            if (msg != null && (msg.contains("inference profile") || msg.contains("on-demand throughput"))) {
+                throw new IllegalStateException(
+                        "Bedrock rejected model id \"" + modelId + "\". Many newer Anthropic models must be called "
+                                + "with an inference profile ARN. In the AWS console: Bedrock → Inference profiles, "
+                                + "copy the profile ARN and set bedrock.model.id or env BEDROCK_MODEL_ID. AWS: " + msg, e);
+            }
+            throw e;
+        } catch (ResourceNotFoundException e) {
+            String msg = e.awsErrorDetails() != null ? e.awsErrorDetails().errorMessage() : String.valueOf(e.getMessage());
+            if (msg != null && (msg.contains("end of its life") || msg.contains("end of life"))) {
+                throw new IllegalStateException(
+                        "This Bedrock model id is retired: \"" + modelId + "\". Use a current model or inference "
+                                + "profile. Example: anthropic.claude-3-5-sonnet-20241022-v2:0. AWS: " + msg, e);
+            }
+            throw new IllegalStateException(
+                    "Bedrock could not find model id \"" + modelId + "\". Check region and model access. AWS: " + msg, e);
+        }
+    }
+
+    private JSONObject buildRequestBodyMultipleImages(String systemPrompt, String userText, java.util.List<byte[]> images) {
+        JSONArray userContent = new JSONArray();
+
+        if (images != null) {
+            for (byte[] imageBytes : images) {
+                if (imageBytes != null && imageBytes.length > 0) {
+                    String b64 = Base64.getEncoder().encodeToString(imageBytes);
+                    String mediaType = detectMediaType(imageBytes);
+                    userContent.put(new JSONObject()
+                            .put("type", "image")
+                            .put("source", new JSONObject()
+                                    .put("type", "base64")
+                                    .put("media_type", mediaType)
+                                    .put("data", b64)));
+                }
+            }
+        }
+
+        userContent.put(new JSONObject().put("type", "text").put("text", userText));
+
+        JSONArray messages = new JSONArray();
+        messages.put(new JSONObject().put("role", "user").put("content", userContent));
+
+        JSONObject root = new JSONObject()
+                .put("anthropic_version", "bedrock-2023-05-31")
+                .put("max_tokens", maxTokens)
+                .put("temperature", temperature)
+                .put("messages", messages);
+
+        if (systemPrompt != null && !systemPrompt.isBlank()) {
+            root.put("system", systemPrompt);
+        }
+
+        return root;
     }
 
     /** Parse model output as JSON after stripping fences and leading prose. */
