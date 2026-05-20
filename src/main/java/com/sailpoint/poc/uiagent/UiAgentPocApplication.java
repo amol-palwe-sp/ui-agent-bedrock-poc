@@ -78,7 +78,8 @@ public final class UiAgentPocApplication {
                     actionLogger,
                     config.agentMaxSteps(),
                     parsed.goal,
-                    config.agentNoProgressLimit());
+                    config.agentNoProgressLimit())
+                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
             loop.run();
         }
     }

@@ -1,0 +1,198 @@
+/* ── Aggregation-specific styles ─────────────────────────────────────── */
+
+/* Pagination info display (read-only box in Section 2) */
+.pagination-info {
+  background: #f8f9fa;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pagination-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.pagination-info-label {
+  color: var(--text-muted);
+  min-width: 110px;
+  font-size: 13px;
+}
+
+.pagination-type-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: lowercase;
+  background: #e3f0ff;
+  color: var(--action-blue);
+  border: 1px solid #b3d4ff;
+}
+
+.pagination-type-badge.type-next-button   { background: #e3f0ff; color: #0055cc; border-color: #b3d4ff; }
+.pagination-type-badge.type-page-numbers  { background: #e6f4ea; color: #1a7340; border-color: #b2dfcc; }
+.pagination-type-badge.type-load-more     { background: #fff3e0; color: #bf6000; border-color: #ffe0b2; }
+.pagination-type-badge.type-infinite-scroll { background: #f3e5f5; color: #7b1fa2; border-color: #e1bee7; }
+.pagination-type-badge.type-unknown       { background: #f5f5f5; color: #555;    border-color: #ddd; }
+
+.pagination-selector-hint {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 2px 6px;
+  word-break: break-all;
+}
+
+/* Results section */
+.results-section { margin-top: 0; }
+
+.stats-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  background: #f0f7ff;
+  border: 1px solid #c8e0ff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+.stats-bar-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stats-bar-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.stats-bar-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--sp-blue);
+}
+
+.stats-bar-columns {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-style: italic;
+  align-self: center;
+  margin-left: auto;
+}
+
+/* Download row (replaces csv-path display) */
+.download-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.btn-download {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #1a7340;
+  color: #ffffff;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 22px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.btn-download:hover    { background: #145c33; }
+.btn-download:active   { transform: scale(0.98); }
+.btn-download:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-download.downloading {
+  background: #145c33;
+  cursor: wait;
+}
+
+.download-icon { font-size: 16px; }
+
+.download-file-info {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* Preview table */
+.preview-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.preview-table th {
+  background: #f0f4f8;
+  color: var(--text);
+  font-weight: 600;
+  padding: 10px 14px;
+  text-align: left;
+  white-space: nowrap;
+  border-bottom: 2px solid var(--border);
+  position: sticky;
+  top: 0;
+}
+
+.preview-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid #f0f0f0;
+  color: var(--text);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-table tr:last-child td { border-bottom: none; }
+.preview-table tr:nth-child(even) td { background: #fafafa; }
+.preview-table tr:hover td { background: #f0f7ff; }
+
+.preview-note {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 8px;
+  text-align: right;
+}
+
+/* Token usage summary in results */
+.usage-summary {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.usage-summary strong { color: var(--text); }

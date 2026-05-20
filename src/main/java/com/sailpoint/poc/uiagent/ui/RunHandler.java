@@ -3,6 +3,7 @@ package com.sailpoint.poc.uiagent.ui;
 import com.sailpoint.poc.uiagent.ActionLogger;
 import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import com.sun.net.httpserver.HttpExchange;
@@ -103,8 +104,12 @@ public final class RunHandler implements HttpHandler {
                     AgentLoop loop = new AgentLoop(
                             bedrock, browser, actionLogger,
                             config.agentMaxSteps(), finalGoal,
-                            config.agentNoProgressLimit());
-                    loop.run();
+                            config.agentNoProgressLimit())
+                            .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
+                    TokenUsage usage = loop.run();
+                    state.logQueue.offer("TOKEN_USAGE:" + usage.inputTokens()
+                            + ":" + usage.outputTokens()
+                            + ":" + usage.totalCostUsd());
                 }
                 state.logQueue.offer("STATUS:ready");
                 state.logQueue.offer("DONE:0");

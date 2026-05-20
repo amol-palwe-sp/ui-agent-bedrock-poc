@@ -53,6 +53,20 @@ body {
 
 .navbar-brand img { border-radius: 4px; }
 
+/* ── Navbar Tabs ───────────────────────────────────────────────────────── */
+.navbar-tabs { display: flex; gap: 4px; }
+.nav-tab {
+  color: rgba(255,255,255,0.75);
+  text-decoration: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.15s, color 0.15s;
+}
+.nav-tab:hover    { background: rgba(255,255,255,0.15); color: #fff; }
+.nav-tab.tab-active { background: rgba(255,255,255,0.2); color: #fff; }
+
 /* ── Status Indicator ──────────────────────────────────────────────────── */
 .status-indicator {
   display: flex;

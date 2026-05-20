@@ -65,6 +65,16 @@ public final class PocConfig {
         return Integer.parseInt(optional("agent.no_progress_limit", "3"));
     }
 
+    /**
+     * Maximum viewport-sized screenshot tiles captured top→bottom on page-shape-changing
+     * observations (INIT / GOTO / RELOAD_PAGE) so the LLM can see a tall page (long forms)
+     * in one observation. Set to {@code 1} or {@code 0} to disable and use single-viewport
+     * screenshots only.  Default {@code 6} balances visibility with token cost.
+     */
+    public int agentMultiViewportMaxFrames() {
+        return Integer.parseInt(optional("agent.multi.viewport.max.frames", "6"));
+    }
+
     // --- Browser ---
 
     public boolean browserHeadless()  { return Boolean.parseBoolean(optional("browser.headless", "false")); }
@@ -116,5 +126,36 @@ public final class PocConfig {
      */
     public int interActionDelayMs() {
         return Integer.parseInt(optional("browser.inter.action.delay.ms", "0"));
+    }
+
+    // --- Video frame extraction ---
+
+    public int videoMaxFrames() {
+        return Integer.parseInt(optional("video.max.frames", "80"));
+    }
+
+    public double videoChangeThreshold() {
+        return Double.parseDouble(optional("video.change.threshold", "0.02"));
+    }
+
+    public double videoMinGapSeconds() {
+        return Double.parseDouble(optional("video.min.gap.seconds", "0.5"));
+    }
+
+    /** Returns the debug-frames directory path, or an empty string when disabled. */
+    public String videoDebugFramesDir() {
+        return optional("video.debug.frames.dir", "");
+    }
+
+    // --- Account Aggregation ---
+
+    /** Maximum number of pages the aggregation loop will scrape before stopping. */
+    public int aggregationMaxPages() {
+        return Integer.parseInt(optional("aggregation.max.pages", "50"));
+    }
+
+    /** Directory where aggregation CSV files are written. */
+    public String aggregationOutputDir() {
+        return optional("aggregation.output.dir", "./output");
     }
 }

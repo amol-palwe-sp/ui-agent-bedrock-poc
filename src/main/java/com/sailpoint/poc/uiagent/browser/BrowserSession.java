@@ -486,6 +486,96 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
+    /**
+     * Captures multiple viewport-sized JPEG screenshots tiled top→bottom for the current page.
+     *
+     * <p>Walks the page from the very top down in (viewportHeight - {@code OVERLAP_PX}) increments,
+     * snapping a screenshot at each position so the LLM can see a tall page (long forms, multi-step
+     * setup screens) in a single observation.  The original scroll position is restored before
+     * returning.
+     *
+     * <p>Stops when:
+     * <ul>
+     *   <li>{@code maxFrames} screenshots have been captured, or</li>
+     *   <li>two consecutive scroll attempts produce the same scrollY (reached the bottom), or</li>
+     *   <li>the page is shorter than the viewport (returns a single viewport screenshot).</li>
+     * </ul>
+     *
+     * <p>If multi-viewport capture fails for any reason, falls back to a single viewport
+     * screenshot at the current scroll position.
+     *
+     * @param maxFrames upper bound on screenshots returned (must be {@code >= 1})
+     * @param quality   JPEG quality 0–100
+     * @return ordered list of JPEG byte arrays, top-of-page first
+     */
+    public java.util.List<byte[]> viewportScrollScreenshotsJpeg(int maxFrames, int quality) {
+        if (maxFrames < 1) maxFrames = 1;
+
+        java.util.List<byte[]> frames = new java.util.ArrayList<>();
+        Long savedScrollY = null;
+
+        try {
+            // Save current scroll position so we can restore it before returning.
+            savedScrollY = ((Number) page.evaluate("() => window.scrollY")).longValue();
+
+            int viewportHeight = ((Number) page.evaluate("() => window.innerHeight")).intValue();
+            int totalHeight    = ((Number) page.evaluate(
+                    "() => Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
+                )).intValue();
+
+            // Short page → just one screenshot, no scrolling needed.
+            if (viewportHeight <= 0 || totalHeight <= viewportHeight + 50) {
+                frames.add(viewportScreenshotJpeg(quality));
+                return frames;
+            }
+
+            // Reset to the very top before tiling.
+            page.evaluate("() => window.scrollTo(0, 0)");
+            sleepQuietly(150); // let any sticky-header / lazy-load settle
+
+            final int OVERLAP_PX = 80; // small overlap so nothing falls between tiles
+            int step             = Math.max(200, viewportHeight - OVERLAP_PX);
+            long lastScrollY     = -1;
+
+            for (int i = 0; i < maxFrames; i++) {
+                byte[] frame = viewportScreenshotJpeg(quality);
+                if (frame.length > 0) frames.add(frame);
+
+                long currentScrollY = ((Number) page.evaluate("() => window.scrollY")).longValue();
+
+                // Reached the bottom — two consecutive scrolls yielded the same Y.
+                if (currentScrollY == lastScrollY) break;
+                lastScrollY = currentScrollY;
+
+                // Are we at (or past) the bottom already?
+                if (currentScrollY + viewportHeight >= totalHeight - 5) break;
+
+                page.evaluate("(dy) => window.scrollBy(0, dy)", step);
+                sleepQuietly(120);
+            }
+
+            return frames;
+
+        } catch (RuntimeException ex) {
+            System.err.println("multi-viewport screenshot failed: " + ex.getMessage()
+                    + " — falling back to single viewport");
+            if (frames.isEmpty()) {
+                byte[] fallback = viewportScreenshotJpeg(quality);
+                if (fallback.length > 0) frames.add(fallback);
+            }
+            return frames;
+        } finally {
+            // Always restore the original scroll position so subsequent actions / element ids
+            // operate on the same viewport the caller had before this method.
+            if (savedScrollY != null) {
+                try {
+                    page.evaluate("(y) => window.scrollTo(0, y)", savedScrollY);
+                    sleepQuietly(80);
+                } catch (RuntimeException ignored) {}
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // DOM scraping
     // -------------------------------------------------------------------------

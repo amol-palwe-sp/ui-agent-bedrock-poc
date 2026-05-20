@@ -172,3 +172,134 @@ Run POC Application
 ./gradlew runUI
 # opens http://localhost:8080 automatically
 ```
+
+---
+
+## Account Aggregation — Terminal Workflow
+
+The aggregation pipeline runs in **two steps** from the terminal.  All output files land in `./output/` (created automatically).
+
+### Prerequisites
+
+- `application.properties` configured (region, model id, browser settings).
+- AWS credentials active (`aws sso login` if using SSO).
+- Video file: an MP4 screen recording showing:
+  1. Navigation to the login page → authentication → reaching the user/account list page.
+  2. At least one pagination click on that table (so Claude can identify the pattern).
+
+---
+
+### Step 1 — Analyse video → save plan JSON
+
+```bash
+./gradlew runAggregationPlan \
+  --args='--video=/absolute/path/to/recording.mp4 \
+          --url=https://admin.google.com/ac/users'
+```
+
+**Arguments:**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--video=<path>` | Yes | Absolute path to the MP4 recording |
+| `--url=<url>` | Yes | Target URL of the user/account list page |
+
+**What it does:**
+1. Extracts key frames from the video (OpenCV).
+2. Sends frames to Claude — extracts navigation steps + pagination pattern.
+3. Opens a browser, navigates to `--url`, and runs the extracted steps.
+4. Saves a plan JSON to `./output/aggregation-plan_YYYYMMDD_HHmmss.json`.
+
+**Note the plan file path** printed at the end — you need it for Step 2.
+
+---
+
+### Step 2 — Scrape with real credentials → write CSV
+
+```bash
+./gradlew runAggregation \
+  --args='--plan=./output/aggregation-plan_YYYYMMDD_HHmmss.json \
+          --url=https://admin.google.com/ac/users \
+          --goal=enter "you@example.com" in the Email field, then click Next, then enter "your-password" in the password field, then click Next'
+```
+
+**Arguments:**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--plan=<path>` | Yes | Plan JSON from Step 1 |
+| `--url=<url>` | Yes | Same URL as Step 1 |
+| `--goal=<text>` | Recommended | Navigation steps with **real credentials** (overrides Claude-extracted goal) |
+
+**`--goal` format** — comma-separated `then` phrases, credentials in double quotes:
+```
+enter "user@example.com" in the Email field, then click Next, then enter "password" in the password field, then click Next
+```
+
+**What it does:**
+1. Opens a browser and navigates to `--url`.
+2. Runs `--goal` via AgentLoop to reach the list page (login, menu clicks, etc.).
+3. Detects the accounts table / ARIA grid (JS + Claude vision).
+4. Paginates through all pages (up to `aggregation.max.pages` in `application.properties`).
+5. Writes `./output/accounts_YYYYMMDD_HHmmss.csv`.
+
+**Output summary** printed on completion:
+```
+ACCOUNT AGGREGATION COMPLETE
+Pages scraped    : 10
+Total accounts   : 247
+Columns          : Name, Email, Status, Last sign in
+Output file      : /absolute/path/to/output/accounts_20260505_143022.csv
+```
+
+---
+
+### Optional: one-shot (no plan file)
+
+Skips saving a plan — useful for a quick test:
+
+```bash
+./gradlew runAggregation \
+  --args='--video=/absolute/path/to/recording.mp4 \
+          --url=https://admin.google.com/ac/users \
+          --goal=enter "you@example.com" in the Email field, then click Next, then enter "your-password" in the password field, then click Next'
+```
+
+---
+
+### Configuration knobs (`application.properties`)
+
+| Property | Default | Effect |
+|----------|---------|--------|
+| `aggregation.max.pages` | `50` | Safety ceiling on pages scraped |
+| `aggregation.output.dir` | `./output` | Directory for CSV files |
+| `browser.headless` | `false` | Set `true` for headless scraping |
+| `video.max.frames` | `80` | Max frames sent to Claude per video |
+
+---
+
+### UI workflow (after terminal validation)
+
+Once Step 2 completes and you have a valid CSV:
+
+```bash
+./gradlew runUI
+# opens http://localhost:8080 automatically
+```
+
+Navigate to **`http://localhost:8080/aggregation`** → upload the same MP4 → fill in credentials → click **▶ Run Aggregation**.
+
+---
+
+Run Aggregation (quick reference)
+```bash
+# Step 1
+./gradlew runAggregationPlan \
+  --args='--video=/path/to/recording.mp4 --url=https://admin.google.com/ac/users'
+
+# Step 2 (replace plan filename and credentials)
+./gradlew runAggregation \
+  --args='--plan=./output/aggregation-plan_20260430_140000.json \
+          --url=https://admin.google.com/ac/users \
+          --goal=enter "amol@sptechdev.com" in the Email field, then click Next, then enter "GOOGLE@S09u@M09u" in the password field, then click Next'
+```

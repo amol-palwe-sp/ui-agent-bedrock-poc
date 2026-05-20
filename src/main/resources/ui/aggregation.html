@@ -3,11 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>UI Agent POC — SailPoint</title>
+  <title>Account Aggregation — UI Agent POC</title>
   <link rel="icon" type="image/png" href="/favicon.png">
   <link rel="shortcut icon" type="image/png" href="/favicon.png">
   <link rel="apple-touch-icon" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/aggregation.css">
 </head>
 <body>
 
@@ -18,8 +19,8 @@
       <span>UI Agent POC</span>
     </div>
     <div class="navbar-tabs">
-      <a href="/" class="nav-tab tab-active">Provisioning Settings</a>
-      <a href="/aggregation" class="nav-tab">Aggregation Settings</a>
+      <a href="/" class="nav-tab">Provisioning Settings</a>
+      <a href="/aggregation" class="nav-tab tab-active">Aggregation Settings</a>
     </div>
     <div class="status-indicator">
       <span class="status-dot" id="statusDot"></span>
@@ -30,7 +31,7 @@
   <!-- ── MAIN ───────────────────────────────────────────────────────────── -->
   <main class="container">
 
-    <!-- ── STEP 1: UPLOAD ──────────────────────────────────────────────── -->
+    <!-- ── SECTION 1: UPLOAD ───────────────────────────────────────────── -->
     <section class="card" id="sectionUpload">
       <div class="card-header">
         <span class="step-badge">1</span>
@@ -63,22 +64,18 @@
             <label>Max Frames
               <input type="number" id="maxFrames" value="80" min="10" max="200">
             </label>
-            <label class="checkbox-label">
-              <input type="checkbox" id="saveDebugFrames">
-              Save debug frames
-            </label>
           </div>
         </details>
 
         <button class="btn btn-primary btn-lg" id="btnGenerate" disabled>
-          <span id="btnGenerateText">Generate Script</span>
+          <span id="btnGenerateText">▶ Generate Script</span>
           <span id="btnGenerateSpinner" class="spinner hidden"></span>
         </button>
 
       </div>
     </section>
 
-    <!-- ── STEP 2: SCRIPT ──────────────────────────────────────────────── -->
+    <!-- ── SECTION 2: GENERATED SCRIPT ─────────────────────────────────── -->
     <section class="card locked" id="sectionScript">
       <div class="card-header">
         <span class="step-badge">2</span>
@@ -90,11 +87,11 @@
       </div>
       <div class="card-body">
 
-        <!-- PART A: Placeholder values (prominent, pre-filled) -->
+        <!-- PART A: Credential Placeholders -->
         <div id="placeholderSection" class="placeholder-section hidden">
           <div class="placeholder-header">
             <span class="placeholder-icon">🔑</span>
-            <span>Script Values</span>
+            <span>Credentials</span>
             <span class="placeholder-subtitle">Fill in values before running</span>
           </div>
           <div id="placeholderGrid" class="placeholder-grid">
@@ -111,16 +108,29 @@
           </div>
         </details>
 
-        <!-- PART C: Assembled command -->
-        <div class="command-preview">
-          <div class="command-label">
-            Assembled command:
-            <button class="btn btn-ghost btn-sm" id="btnCopy">📋 Copy</button>
+        <!-- PART C: Pagination info (read-only) -->
+        <div id="paginationInfo" class="pagination-info hidden">
+          <div class="pagination-info-row">
+            <span class="pagination-info-label">Pagination type</span>
+            <span id="paginationTypeBadge" class="pagination-type-badge">—</span>
           </div>
-          <div class="command-box" id="commandBox"></div>
+          <div class="pagination-info-row">
+            <span class="pagination-info-label">Description</span>
+            <span id="paginationDescription">—</span>
+          </div>
+          <div class="pagination-info-row">
+            <span class="pagination-info-label">Selector hint</span>
+            <span id="paginationSelectorHint" class="pagination-selector-hint">—</span>
+          </div>
         </div>
 
-        <!-- PART D: Empty-placeholder warning banner -->
+        <!-- PART D: Assembled goal preview -->
+        <div class="command-preview">
+          <div class="command-label">Assembled navigation goal:</div>
+          <div class="command-box" id="goalBox"></div>
+        </div>
+
+        <!-- PART E: Empty-placeholder warning banner -->
         <div id="emptyPlaceholderWarning" class="warning-banner hidden">
           <span>⚠️</span>
           <span id="warningText"></span>
@@ -130,25 +140,22 @@
           </div>
         </div>
 
-        <!-- PART E: Run button -->
+        <!-- PART F: Run button -->
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btnRun" disabled>
-            ▶ Run Script
+            ▶ Run Aggregation
           </button>
         </div>
 
       </div>
     </section>
 
-    <!-- ── STEP 3: LOG ─────────────────────────────────────────────────── -->
+    <!-- ── SECTION 3: EXECUTION LOG ─────────────────────────────────────── -->
     <section class="card locked" id="sectionLog">
       <div class="card-header">
         <span class="step-badge">3</span>
         Execution Log
-        <div class="card-header-actions">
-          <span id="execTokenInfo" class="token-info hidden"></span>
-          <button class="btn btn-danger btn-sm hidden" id="btnStop">⏹ Stop</button>
-        </div>
+        <button class="btn btn-danger btn-sm hidden" id="btnStop">⏹ Stop</button>
       </div>
       <div class="card-body">
         <div class="log-panel" id="logPanel">
@@ -157,11 +164,64 @@
       </div>
     </section>
 
+    <!-- ── SECTION 4: RESULTS ────────────────────────────────────────────── -->
+    <section class="card locked results-section" id="sectionResults">
+      <div class="card-header">
+        <span class="step-badge">4</span>
+        Results
+        <div class="card-header-actions">
+          <span id="resultsTokenInfo" class="token-info hidden"></span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <!-- Stats bar -->
+        <div id="statsBar" class="stats-bar hidden">
+          <div class="stats-bar-item">
+            <span class="stats-bar-label">Total Accounts</span>
+            <span class="stats-bar-value" id="statsTotalRows">—</span>
+          </div>
+          <div class="stats-bar-item">
+            <span class="stats-bar-label">Pages Scraped</span>
+            <span class="stats-bar-value" id="statsPagesScraped">—</span>
+          </div>
+          <span class="stats-bar-columns" id="statsColumns"></span>
+        </div>
+
+        <!-- Download button -->
+        <div id="downloadRow" class="download-row hidden">
+          <button class="btn btn-download" id="btnDownloadCsv">
+            <span class="download-icon">⬇</span>
+            Download CSV
+          </button>
+          <span id="downloadFileInfo" class="download-file-info"></span>
+        </div>
+
+        <!-- Preview table -->
+        <div id="previewTableWrapper" class="preview-table-wrapper hidden">
+          <table class="preview-table" id="previewTable">
+            <thead id="previewTableHead"></thead>
+            <tbody id="previewTableBody"></tbody>
+          </table>
+        </div>
+        <div id="previewNote" class="preview-note hidden"></div>
+
+        <!-- Usage summary -->
+        <div id="usageSummary" class="usage-summary hidden"></div>
+
+        <!-- Placeholder when no results yet -->
+        <div id="resultsPlaceholder" class="log-placeholder">
+          Results will appear here once an aggregation completes.
+        </div>
+
+      </div>
+    </section>
+
   </main>
 
   <!-- Toast container -->
   <div id="toastContainer" class="toast-container"></div>
 
-  <script src="/app.js"></script>
+  <script src="/aggregation.js"></script>
 </body>
 </html>

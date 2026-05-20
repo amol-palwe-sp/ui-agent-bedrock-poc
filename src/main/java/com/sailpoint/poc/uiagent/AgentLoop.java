@@ -38,7 +38,11 @@ public final class AgentLoop {
               placeholder, current value, visible label, and — for <select> — its options).
               The id is stable for THIS observation only; it changes after the page navigates
               or re-renders.
-            - A viewport screenshot of the page (when visual state may have changed).
+            - A viewport screenshot of the page (when visual state may have changed). On
+              new pages or after navigation you may receive MULTIPLE images — vertical tiles
+              of the SAME page from top to bottom. Use them together to understand the full
+              page layout (long forms, multi-section pages). Element ids in the list below
+              are valid even when the corresponding element is in a lower tile.
             - A short feedback log of what the previous steps actually did: key successes
               (CLICK, TYPE, SELECT_OPTION, CHECK, HOVER), failures, and navigation events.
               Use this log to know which actions are already done — do NOT repeat them.
@@ -83,10 +87,36 @@ public final class AgentLoop {
               next attempt (different element_id, HOVER to reveal first, RELOAD_PAGE if stuck).
             - Valid types: GOTO, CLICK, TYPE, SELECT_OPTION, KEYPRESS, SCROLL, HOVER, CHECK,
               RELOAD_PAGE, WAIT, DONE, TERMINATE.
+
+            Action priority on long forms (CRITICAL — read carefully):
+            1. ALWAYS prefer ACTING on a visible element over SCROLLING. Before emitting a
+               SCROLL, scan the numbered elements list for the target by name / label /
+               placeholder / option text. If you find a match, emit the corresponding
+               TYPE / CLICK / SELECT_OPTION / CHECK action immediately on that element_id —
+               do NOT scroll first to "verify visually". Element ids are valid even when
+               the element is partially below the visible viewport.
+            2. Submit / Create / Save / Confirm / Apply buttons on long forms are typically
+               at the BOTTOM of the form, not the top. After all required fields are filled
+               (per the feedback log), scroll DOWN to find the submit button. Do NOT scroll
+               UP looking for it.
+            3. Anti-oscillation: if your last 2 actions in the feedback log are both SCROLL
+               and you have not acted on a field since, your next action MUST be one of:
+                 (a) act on a visible element from the indexed list, OR
+                 (b) continue scrolling in the SAME direction.
+               Do NOT reverse scroll direction unless the screenshot clearly shows the
+               target element ABOVE the current viewport.
+            4. Trust the feedback log for completion. If "s_N: SELECT_OPTION ✓",
+               "s_N: TYPE ✓", "s_N: CHECK ✓", or similar appears in the log for a field,
+               that field is DONE — never re-verify by scrolling back to look at it.
+               Move on to the next unfilled step in the goal.
+            5. Dropdown discipline: when the goal says "select X from the Y dropdown" and
+               an element with role/select matching Y appears in the elements list, issue
+               SELECT_OPTION on that element immediately. Do not scroll past a visible
+               dropdown looking for "a better one".
             """;
 
     private static final int MAX_ACTIONS_PER_BATCH  = 3;
-    private static final int MAX_HISTORY_LINES      = 6;
+    private static final int MAX_HISTORY_LINES      = 12;
     /**
      * Maximum times the same action+element_id pair may succeed before it is considered a loop.
      * The map is cleared on every page navigation so elements that re-appear on a fresh page are
@@ -94,12 +124,33 @@ public final class AgentLoop {
      */
     private static final int MAX_SAME_ACTION_REPEATS = 2;
 
+    /**
+     * Action types excluded from the repeat-loop guard entirely.
+     *
+     * <p>SCROLL, WAIT, and RELOAD_PAGE all have no meaningful {@code element_id} (they always
+     * map to {@code -1}), so the guard key is identical for every invocation regardless of
+     * direction, amount, or purpose.  Blocking them after two occurrences incorrectly kills
+     * legitimate long-form workflows that require multiple scrolls or waits.
+     *
+     * <p>URL-level progress tracking ({@code noProgressStreak}) still catches agents that are
+     * genuinely stuck scrolling or waiting forever on the same page.
+     */
+    private static final java.util.Set<String> LOOP_GUARD_EXCLUDED_TYPES =
+            java.util.Set.of("SCROLL", "WAIT", "RELOAD_PAGE");
+
     private final BedrockAnthropicClient bedrock;
     private final BrowserSession         browser;
     private final ActionLogger           actionLogger;
     private final int                    maxSteps;
     private final String                 userGoal;
     private final int                    noProgressLimit;
+
+    /**
+     * Number of viewport-tiled screenshots to capture on page-shape-changing observations
+     * (INIT / GOTO / RELOAD_PAGE).  Default {@code 1} = current single-viewport behaviour.
+     * Callers opt in via {@link #setMultiViewportMaxFrames(int)}.
+     */
+    private int multiViewportMaxFrames = 1;
 
     public AgentLoop(
             BedrockAnthropicClient bedrock,
@@ -116,7 +167,17 @@ public final class AgentLoop {
         this.noProgressLimit  = noProgressLimit > 0 ? noProgressLimit : 3;
     }
 
-    public void run() throws Exception {
+    /**
+     * Enables multi-viewport screenshot tiling on page-shape-changing observations so the LLM
+     * can see a tall page (long forms) in one observation.  Pass {@code 0} or {@code 1} to keep
+     * the default single-viewport behaviour.
+     */
+    public AgentLoop setMultiViewportMaxFrames(int maxFrames) {
+        this.multiViewportMaxFrames = Math.max(1, maxFrames);
+        return this;
+    }
+
+    public TokenUsage run() throws Exception {
         List<String>        history          = new ArrayList<>();
         TokenUsage          totalUsage       = TokenUsage.ZERO;
         String              lastActionType   = "INIT"; // forces screenshot on first step
@@ -130,22 +191,43 @@ public final class AgentLoop {
             JSONArray elements    = browser.listInteractables();
             String    elementText = browser.formatElementsForPrompt(elements);
 
-            // Only capture a screenshot when visual state may have changed.
-            byte[] screenshot = new byte[0];
+            // Decide screenshot strategy.
+            //   - PAGE_SHAPE_CHANGED (INIT / GOTO / RELOAD_PAGE) → multi-viewport tiles
+            //     (when enabled) so the LLM sees the whole tall page at once.
+            //   - Other visual-changing actions (CLICK, TYPE, SCROLL, …) → single viewport;
+            //     fast and cheap, the page shape hasn't changed.
+            //   - WAIT and similar → no screenshot at all.
+            List<byte[]> screenshots = java.util.Collections.emptyList();
             if (shouldTakeScreenshot(lastActionType)) {
-                screenshot = browser.viewportScreenshotJpeg(70);
-                System.out.printf("  [Screenshot] JPEG taken (%d KB)%n", screenshot.length / 1024);
+                if (multiViewportMaxFrames > 1 && isPageShapeChange(lastActionType)) {
+                    screenshots = browser.viewportScrollScreenshotsJpeg(multiViewportMaxFrames, 70);
+                    int totalKb = 0;
+                    for (byte[] s : screenshots) totalKb += s.length;
+                    System.out.printf("  [Screenshot] %d viewport tiles (%d KB total)%n",
+                            screenshots.size(), totalKb / 1024);
+                } else {
+                    byte[] single = browser.viewportScreenshotJpeg(70);
+                    if (single.length > 0) screenshots = java.util.List.of(single);
+                    System.out.printf("  [Screenshot] JPEG taken (%d KB)%n", single.length / 1024);
+                }
             } else {
                 System.out.println("  [Screenshot] Skipped (last action=" + lastActionType + ")");
             }
 
-            String userMessage = buildUserMessage(step, elementText, history);
+            boolean multiViewport = screenshots.size() > 1;
+            String userMessage = buildUserMessage(step, elementText, history, multiViewport, screenshots.size());
 
             System.out.println("--- Step " + (step + 1) + " / " + maxSteps + " ---");
             System.out.println("URL: " + browser.currentUrl());
             System.out.println("Indexed elements: " + elements.length());
 
-            InvokeResult invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, screenshot);
+            InvokeResult invokeResult;
+            if (multiViewport) {
+                invokeResult = bedrock.invokeWithMultipleImages(SYSTEM_PROMPT, userMessage, screenshots);
+            } else {
+                byte[] single = screenshots.isEmpty() ? new byte[0] : screenshots.get(0);
+                invokeResult = bedrock.invokeWithVision(SYSTEM_PROMPT, userMessage, single);
+            }
 
             TokenUsage stepUsage = invokeResult.usage();
             totalUsage = totalUsage.add(stepUsage);
@@ -200,12 +282,56 @@ public final class AgentLoop {
             if (outcome.stop() || goalAchieved) {
                 System.out.println("Stopped after goal achieved or terminal action.");
                 printTotalUsage(totalUsage);
-                return;
+                return totalUsage;
             }
         }
 
         System.out.println("Max steps reached without explicit DONE.");
         printTotalUsage(totalUsage);
+        return totalUsage;
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static boolean shouldTakeScreenshot(String lastAction) {
+        if (lastAction == null) return true;
+        return switch (lastAction.toUpperCase()) {
+            // These change visual state → always take a fresh screenshot.
+            case "INIT", "GOTO", "CLICK", "SELECT_OPTION", "KEYPRESS",
+                 "HOVER", "CHECK", "RELOAD_PAGE",
+                 // Bug 3 fix: TYPE changes the field value visually; without a screenshot the
+                 // LLM has no confirmation the text landed and will repeat the TYPE next step.
+                 "TYPE",
+                 // Scroll fix: on long forms, scrolling reveals entirely different sections of
+                 // the page. Without a screenshot after scroll the agent is blind to what is
+                 // now visible and falls back to stale history, causing ↑↓ oscillation loops.
+                 "SCROLL" -> true;
+            // WAIT genuinely does not change visual state — keep it skipped.
+            case "WAIT" -> false;
+            default -> true; // unknown — safe to screenshot
+        };
+    }
+
+    /**
+     * True when the last action almost certainly produced an entirely new page layout
+     * (initial load, navigation, or full reload).  These are the only actions where
+     * paying for multi-viewport screenshot tiles is worth it; CLICK / TYPE / SCROLL stay
+     * cheap with a single viewport tile.
+     */
+    private static boolean isPageShapeChange(String lastAction) {
+        if (lastAction == null) return true;
+        return switch (lastAction.toUpperCase()) {
+            case "INIT", "GOTO", "RELOAD_PAGE" -> true;
+            default -> false;
+        };
+    }
+
+    private static String getLastActionType(JSONArray actions) {
+        if (actions == null || actions.isEmpty()) return "UNKNOWN";
+        int lastIdx = Math.min(actions.length(), MAX_ACTIONS_PER_BATCH) - 1;
+        return actions.getJSONObject(lastIdx).optString("type", "UNKNOWN").toUpperCase();
     }
 
     // -------------------------------------------------------------------------
@@ -239,10 +365,20 @@ public final class AgentLoop {
         System.out.println("========================================");
     }
 
-    private String buildUserMessage(int step, String elementText, List<String> history) {
+    private String buildUserMessage(int step, String elementText, List<String> history,
+                                    boolean multiViewport, int screenshotCount) {
         StringBuilder sb = new StringBuilder();
         sb.append("User goal:\n").append(userGoal).append("\n\n");
         sb.append("Current URL:\n").append(browser.currentUrl()).append("\n\n");
+        if (multiViewport) {
+            sb.append("Screenshots (").append(screenshotCount).append(" tiles):\n")
+              .append("The attached images are vertical slices of the SAME page from top to bottom.\n")
+              .append("Image 1 = top of page, image ").append(screenshotCount)
+              .append(" = bottom. Use them together to understand the full page layout — locate\n")
+              .append("the field, dropdown, or submit button you need, then act on the matching\n")
+              .append("element_id from the list below (element ids are valid even when an element\n")
+              .append("appears in a lower tile that is currently below the visible viewport).\n\n");
+        }
         sb.append("Interactable elements (use element_id matching [n]):\n").append(elementText).append('\n');
         if (!history.isEmpty()) {
             sb.append("Previous step feedback (do NOT repeat actions marked ✓):\n");
@@ -254,7 +390,8 @@ public final class AgentLoop {
 
     /** Action types whose successes are worth recording so the LLM doesn't repeat them. */
     private static final java.util.Set<String> HISTORY_WORTHY_TYPES = java.util.Set.of(
-            "CLICK", "TYPE", "SELECT_OPTION", "CHECK", "HOVER", "KEYPRESS");
+            "CLICK", "TYPE", "SELECT_OPTION", "CHECK", "HOVER", "KEYPRESS",
+            "SCROLL");  // scroll history lets the LLM self-detect ↑↓ oscillation patterns
 
     private BatchOutcome executeActions(
             JSONArray actions,
@@ -300,7 +437,7 @@ public final class AgentLoop {
             int elementId = a.optInt("element_id", -1);
             String actionKey = type + ":" + elementId;
             int priorRepeats = actionRepeatCounts.getOrDefault(actionKey, 0);
-            if (priorRepeats >= MAX_SAME_ACTION_REPEATS) {
+            if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type) && priorRepeats >= MAX_SAME_ACTION_REPEATS) {
                 String loopMsg = "s" + step + ": LOOP DETECTED — " + type
                         + (elementId >= 0 ? " id=" + elementId : "")
                         + " already done " + priorRepeats + "x — move on to the next step";
@@ -330,7 +467,11 @@ public final class AgentLoop {
             if (ok) {
                 hadSuccess = true;
                 // Increment repeat counter only on success — failed actions shouldn't count.
-                actionRepeatCounts.put(actionKey, priorRepeats + 1);
+                // SCROLL, WAIT, and RELOAD_PAGE are excluded: they have no meaningful element_id
+                // so their key is always the same, causing false loop detection on long forms.
+                if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type)) {
+                    actionRepeatCounts.put(actionKey, priorRepeats + 1);
+                }
 
                 // Bug 4: Log key successes so the LLM knows they're already done.
                 if (HISTORY_WORTHY_TYPES.contains(type)) {

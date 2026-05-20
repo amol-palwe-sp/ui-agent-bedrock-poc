@@ -8,31 +8,30 @@ import java.io.OutputStream;
 import java.util.concurrent.TimeUnit;
 
 /**
- * GET /api/stream — Server-Sent Events endpoint.
+ * GET /api/aggregation/stream — Server-Sent Events endpoint for the Aggregation tab.
  *
- * <p>Drains {@link AgentUIServer.ServerState#logQueue} and forwards every entry
- * as a typed JSON SSE message. Sends keepalive comments when idle so the
- * browser connection stays alive.
+ * <p>Drains {@link AggregationServerState#logQueue} and forwards every entry as a typed
+ * JSON SSE message.  Sends keepalive comments when idle.
  *
- * <h3>Message prefix → JSON shape</h3>
+ * <h3>Message prefix → JSON shape (same as {@link StreamHandler}, plus one extra type)</h3>
  * <pre>
- *   "LOG:INFO:text"      → { type:"log",      level:"info",    text:"..." }
- *   "LOG:SUCCESS:text"   → { type:"log",      level:"success", text:"..." }
- *   "LOG:ERROR:text"     → { type:"log",      level:"error",   text:"..." }
- *   "LOG:WARNING:text"   → { type:"log",      level:"warning", text:"..." }
- *   "LOG:STEP:text"      → { type:"log",      level:"step",    text:"..." }
- *   "STATUS:value"       → { type:"status",   value:"..." }
- *   "PROGRESS:N:M:label" → { type:"progress", current:N, total:M, label:"..." }
- *   "DONE:0|1"                      → { type:"done",        exitCode:0|1 }
- *   "ERROR:message"                 → { type:"error",       message:"..." }
- *   "TOKEN_USAGE:in:out:cost"       → { type:"token_usage", inputTokens:N, outputTokens:M, costUsd:X }
+ *   "LOG:INFO:text"              → { type:"log",               level:"info",   text:"..." }
+ *   "LOG:SUCCESS:text"           → { type:"log",               level:"success",text:"..." }
+ *   "LOG:ERROR:text"             → { type:"log",               level:"error",  text:"..." }
+ *   "LOG:WARNING:text"           → { type:"log",               level:"warning",text:"..." }
+ *   "LOG:STEP:text"              → { type:"log",               level:"step",   text:"..." }
+ *   "STATUS:value"               → { type:"status",            value:"..." }
+ *   "PROGRESS:N:M:label"         → { type:"progress",          current:N, total:M, label:"..." }
+ *   "DONE:0|1"                   → { type:"done",              exitCode:0|1 }
+ *   "ERROR:message"              → { type:"error",             message:"..." }
+ *   "AGGREGATION_DONE:N:path"    → { type:"aggregation_done",  totalRows:N, csvPath:"..." }
  * </pre>
  */
-public final class StreamHandler implements HttpHandler {
+public final class AggregationStreamHandler implements HttpHandler {
 
-    private final AgentUIServer.ServerState state;
+    private final AggregationServerState state;
 
-    public StreamHandler(AgentUIServer.ServerState state) {
+    public AggregationStreamHandler(AggregationServerState state) {
         this.state = state;
     }
 
@@ -42,7 +41,7 @@ public final class StreamHandler implements HttpHandler {
         ex.getResponseHeaders().set("Cache-Control", "no-cache");
         ex.getResponseHeaders().set("Connection",    "keep-alive");
         ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        ex.sendResponseHeaders(200, 0);   // chunked / indefinite
+        ex.sendResponseHeaders(200, 0);
 
         try (OutputStream out = ex.getResponseBody()) {
             while (!Thread.currentThread().isInterrupted()) {
@@ -75,7 +74,6 @@ public final class StreamHandler implements HttpHandler {
 
     private static String toJson(String msg) {
         if (msg.startsWith("LOG:")) {
-            // LOG:<LEVEL>:<text>
             int second = msg.indexOf(':', 4);
             if (second < 0) return logJson("info", msg.substring(4));
             String level = msg.substring(4, second).toLowerCase();
@@ -83,11 +81,9 @@ public final class StreamHandler implements HttpHandler {
             return logJson(level, text);
         }
         if (msg.startsWith("STATUS:")) {
-            String value = msg.substring(7);
-            return "{\"type\":\"status\",\"value\":" + quoted(value) + "}";
+            return "{\"type\":\"status\",\"value\":" + quoted(msg.substring(7)) + "}";
         }
         if (msg.startsWith("PROGRESS:")) {
-            // PROGRESS:N:M:label
             String[] parts = msg.substring(9).split(":", 3);
             int current = safeInt(parts, 0);
             int total   = safeInt(parts, 1);
@@ -100,11 +96,9 @@ public final class StreamHandler implements HttpHandler {
             return "{\"type\":\"done\",\"exitCode\":" + exitCode + "}";
         }
         if (msg.startsWith("ERROR:")) {
-            String message = msg.substring(6);
-            return "{\"type\":\"error\",\"message\":" + quoted(message) + "}";
+            return "{\"type\":\"error\",\"message\":" + quoted(msg.substring(6)) + "}";
         }
         if (msg.startsWith("TOKEN_USAGE:")) {
-            // TOKEN_USAGE:<inputTokens>:<outputTokens>:<costUsd>
             String[] parts = msg.substring(12).split(":", 3);
             int inputTokens  = safeInt(parts, 0);
             int outputTokens = safeInt(parts, 1);
@@ -112,7 +106,21 @@ public final class StreamHandler implements HttpHandler {
             return String.format("{\"type\":\"token_usage\",\"inputTokens\":%d,\"outputTokens\":%d,\"costUsd\":%.6f}",
                     inputTokens, outputTokens, costUsd);
         }
-        // Fallback — treat as info log
+        if (msg.startsWith("AGGREGATION_DONE:")) {
+            // AGGREGATION_DONE:<totalRows>:<csvPath>
+            String payload = msg.substring("AGGREGATION_DONE:".length());
+            int sep = payload.indexOf(':');
+            int totalRows = 0;
+            String csvPath = "";
+            if (sep >= 0) {
+                totalRows = safeInt(new String[]{payload.substring(0, sep)}, 0);
+                csvPath   = payload.substring(sep + 1);
+            } else {
+                totalRows = safeInt(new String[]{payload}, 0);
+            }
+            return "{\"type\":\"aggregation_done\",\"totalRows\":" + totalRows
+                    + ",\"csvPath\":" + quoted(csvPath) + "}";
+        }
         return logJson("info", msg);
     }
 
@@ -121,6 +129,7 @@ public final class StreamHandler implements HttpHandler {
     }
 
     private static String quoted(String s) {
+        if (s == null) return "\"\"";
         return "\"" + s.replace("\\", "\\\\")
                        .replace("\"", "\\\"")
                        .replace("\n", "\\n")

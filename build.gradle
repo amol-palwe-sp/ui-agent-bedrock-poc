@@ -63,3 +63,23 @@ task runVideo(type: JavaExec) {
         args project.property('args').split(' ')
     }
 }
+
+task runAggregationPlan(type: JavaExec) {
+    description = 'Step 1: analyse video, navigate to user list, save aggregation plan JSON'
+    group = 'application'
+    mainClass = 'com.sailpoint.poc.uiagent.aggregation.AggregationPlanRunner'
+    classpath = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
+}
+
+task runAggregation(type: JavaExec) {
+    description = 'Step 2: navigate with real credentials, detect table, scrape all pages, write CSV'
+    group = 'application'
+    mainClass = 'com.sailpoint.poc.uiagent.aggregation.AggregationRunner'
+    classpath = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
+}
