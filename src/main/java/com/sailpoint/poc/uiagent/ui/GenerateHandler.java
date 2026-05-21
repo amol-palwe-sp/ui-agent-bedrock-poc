@@ -107,13 +107,17 @@ public final class GenerateHandler implements HttpHandler {
             push("LOG:INFO:Extracting frames from video...");
 
             PocConfig config = new PocConfig();
-            int effectiveMaxFrames = maxFrames != null ? maxFrames
+            int effectiveMaxFrames  = maxFrames != null ? maxFrames
                     : Integer.parseInt(config.optional("video.max.frames", "80"));
-            double changeThreshold = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
-            double minGapSeconds   = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
+            double changeThreshold  = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
+            double minGapSeconds    = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
+            double maxForcedGapSecs = Double.parseDouble(config.optional("video.max.forced.gap.seconds", "3.0"));
+            int    frameMaxWidth    = Integer.parseInt(config.optional("video.frame.max.width", "1280"));
+            int    jpegQuality      = Integer.parseInt(config.optional("video.jpeg.quality", "75"));
 
             VideoFrameExtractor extractor = new VideoFrameExtractor(
-                    effectiveMaxFrames, changeThreshold, minGapSeconds, null);
+                    effectiveMaxFrames, changeThreshold, minGapSeconds, maxForcedGapSecs,
+                    frameMaxWidth, jpegQuality, null);
             List<byte[]> frames = extractor.extractFrames(tempFile.toString());
 
             if (frames.isEmpty()) {

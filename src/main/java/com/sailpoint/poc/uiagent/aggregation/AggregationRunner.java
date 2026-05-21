@@ -110,6 +110,9 @@ public final class AggregationRunner {
                     config.videoMaxFrames(),
                     config.videoChangeThreshold(),
                     config.videoMinGapSeconds(),
+                    config.videoMaxForcedGapSeconds(),
+                    config.videoFrameMaxWidth(),
+                    config.videoJpegQuality(),
                     config.videoDebugFramesDir());
 
             System.out.println("Extracting frames from: " + videoFile.getAbsolutePath());

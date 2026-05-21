@@ -85,8 +85,11 @@ public final class VideoToGoalRunner {
 
         int effectiveMaxFrames = maxFrames != null ? maxFrames : 
                 Integer.parseInt(config.optional("video.max.frames", "80"));
-        double changeThreshold = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
-        double minGapSeconds = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
+        double changeThreshold   = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
+        double minGapSeconds     = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
+        double maxForcedGapSecs  = Double.parseDouble(config.optional("video.max.forced.gap.seconds", "3.0"));
+        int    frameMaxWidth     = Integer.parseInt(config.optional("video.frame.max.width", "1280"));
+        int    jpegQuality       = Integer.parseInt(config.optional("video.jpeg.quality", "75"));
         String effectiveDebugDir = debugFramesDir != null ? debugFramesDir : 
                 config.optional("video.debug.frames.dir", "");
 
@@ -98,6 +101,9 @@ public final class VideoToGoalRunner {
         System.out.println("  Max frames: " + effectiveMaxFrames);
         System.out.println("  Change threshold: " + (changeThreshold * 100) + "%");
         System.out.println("  Min gap: " + minGapSeconds + "s");
+        System.out.println("  Max forced gap: " + maxForcedGapSecs + "s");
+        System.out.println("  Frame max width: " + (frameMaxWidth > 0 ? frameMaxWidth + "px" : "no resize"));
+        System.out.println("  JPEG quality: " + jpegQuality);
         if (effectiveDebugDir != null) {
             System.out.println("  Debug output: " + effectiveDebugDir);
         }
@@ -105,7 +111,8 @@ public final class VideoToGoalRunner {
 
         System.out.println("Extracting frames from video...");
         VideoFrameExtractor extractor = new VideoFrameExtractor(
-                effectiveMaxFrames, changeThreshold, minGapSeconds, effectiveDebugDir);
+                effectiveMaxFrames, changeThreshold, minGapSeconds, maxForcedGapSecs,
+                frameMaxWidth, jpegQuality, effectiveDebugDir);
         
         List<byte[]> frames = extractor.extractFrames(videoPath);
         System.out.println("Extracted " + frames.size() + " frames from video");

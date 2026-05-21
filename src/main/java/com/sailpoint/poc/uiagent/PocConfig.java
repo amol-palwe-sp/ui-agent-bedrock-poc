@@ -135,11 +135,37 @@ public final class PocConfig {
     }
 
     public double videoChangeThreshold() {
-        return Double.parseDouble(optional("video.change.threshold", "0.02"));
+        return Double.parseDouble(optional("video.change.threshold", "0.005"));
     }
 
     public double videoMinGapSeconds() {
         return Double.parseDouble(optional("video.min.gap.seconds", "0.5"));
+    }
+
+    /**
+     * Maximum seconds allowed between consecutive kept frames before a frame is forced through
+     * regardless of pixel-change magnitude. Catches subtle UI changes (checkbox toggles, etc.)
+     * that fall below {@code videoChangeThreshold()}. Defaults to 3.0 seconds.
+     */
+    public double videoMaxForcedGapSeconds() {
+        return Double.parseDouble(optional("video.max.forced.gap.seconds", "3.0"));
+    }
+
+    /**
+     * Maximum frame width in pixels. Frames wider than this are downscaled proportionally before
+     * JPEG encoding. Reduces HTTP payload size and Claude token cost (tokens scale with pixel count).
+     * Set to {@code 0} to disable resizing. Defaults to 1280.
+     */
+    public int videoFrameMaxWidth() {
+        return Integer.parseInt(optional("video.frame.max.width", "1280"));
+    }
+
+    /**
+     * JPEG quality for video frame encoding (1–100). 75 is a good balance between
+     * payload size and UI text legibility. Defaults to 75.
+     */
+    public int videoJpegQuality() {
+        return Integer.parseInt(optional("video.jpeg.quality", "75"));
     }
 
     /** Returns the debug-frames directory path, or an empty string when disabled. */
