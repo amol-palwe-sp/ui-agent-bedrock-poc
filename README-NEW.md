@@ -10,7 +10,7 @@ This document is the **onboarding README** for the project. It does not replace 
 
 There is also a **video → goal** pipeline: upload or point at an **MP4** screen recording; frames are extracted (OpenCV), sent to Claude, and a suggested `./gradlew run ...` style **goal line** is produced for reuse in the agent.
 
-**No hand-written CSS/XPath selectors** for the main loop: the scraper assigns `data-skyvern-id` per element each turn; the model grounds actions on ids + screenshot.
+**No hand-written CSS/XPath selectors** for the main loop: the scraper assigns `data-ui-agent-id` per element each turn; the model grounds actions on ids + screenshot.
 
 ---
 
@@ -34,9 +34,9 @@ There is also a **video → goal** pipeline: upload or point at an **MP4** scree
 
 ## How the main agent loop works
 
-1. **Observe** — Playwright opens the URL; in-page JavaScript lists visible controls; each gets `data-skyvern-id="N"`; the app builds a numbered list and captures a screenshot (JPEG or PNG per config).
+1. **Observe** — Playwright opens the URL; in-page JavaScript lists visible controls; each gets `data-ui-agent-id="N"`; the app builds a numbered list and captures a screenshot (JPEG or PNG per config).
 2. **Plan** — `BedrockAnthropicClient` sends goal, URL, element list, and image(s) to Claude on Bedrock; response is JSON actions (`CLICK`, `TYPE`, …).
-3. **Act** — `BrowserSession` maps `element_id` → `[data-skyvern-id='N']` and runs actions with fallbacks (click ladder, type ladder), navigation guards, optional inter-action delay.
+3. **Act** — `BrowserSession` maps `element_id` → `[data-ui-agent-id='N']` and runs actions with fallbacks (click ladder, type ladder), navigation guards, optional inter-action delay.
 
 The loop is implemented in `AgentLoop`; CLI entry is `UiAgentPocApplication`; the web server delegates runs to the same `AgentLoop` in a background thread (`RunHandler`).
 

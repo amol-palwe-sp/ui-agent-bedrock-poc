@@ -12,7 +12,7 @@ User: --url + --goal
    ┌────▼─────────────────────────────────────────────────────────────────────┐
    │  OBSERVE                                                                  │
    │  Playwright loads page → JS scrapes visible controls →                   │
-   │  assigns data-skyvern-id="N" per element → builds numbered list + PNG   │
+   │  assigns data-ui-agent-id="N" per element → builds numbered list + PNG   │
    └────┬─────────────────────────────────────────────────────────────────────┘
         │
    ┌────▼──────────────────────────────────────────────────────────────────────┐
@@ -23,7 +23,7 @@ User: --url + --goal
         │
    ┌────▼──────────────────────────────────────────────────────────────────────┐
    │  ACT (Playwright)                                                          │
-   │  Maps element_id → [data-skyvern-id='N'] locator                          │
+   │  Maps element_id → [data-ui-agent-id='N'] locator                          │
    │  Robust action ladder: Playwright → coordinate click → JS click           │
    │  Type ladder: fill → pressSequentially → keyboard.type → JS setter        │
    │  Waits for load / navigation to settle before continuing                  │

@@ -23,7 +23,7 @@ import org.json.JSONObject;
  *
  * <ul>
  *   <li>Tag every visible interactable (including same-origin iframe children) with a stable
- *       {@code data-skyvern-id} so the LLM-supplied id maps deterministically to a Playwright
+ *       {@code data-ui-agent-id} so the LLM-supplied id maps deterministically to a Playwright
  *       {@link Locator}.</li>
  *   <li>Pre-action guards check {@code disabled} / {@code aria-disabled} / {@code readonly} /
  *       {@code aria-readonly} dynamically before every click or type, providing clear failure
@@ -41,7 +41,7 @@ import org.json.JSONObject;
  */
 public final class BrowserSession implements AutoCloseable {
 
-    private static final String ATTR = "data-skyvern-id";
+    private static final String ATTR = "data-ui-agent-id";
 
     private static final int TYPE_CHAR_DELAY_MS        = 15;
     private static final int POST_ACTION_SETTLE_MS     = 200;
@@ -66,7 +66,7 @@ public final class BrowserSession implements AutoCloseable {
     private static final String SCRAPE_AND_TAG_JS =
             """
             () => {
-              const ATTR = 'data-skyvern-id';
+              const ATTR = 'data-ui-agent-id';
               let globalIdx = 0;
               const out = [];
 
@@ -152,7 +152,7 @@ public final class BrowserSession implements AutoCloseable {
     private static final String JS_CLICK =
             """
             (id) => {
-              const el = document.querySelector('[data-skyvern-id="' + id + '"]');
+              const el = document.querySelector('[data-ui-agent-id="' + id + '"]');
               if (!el) return JSON.stringify({ ok: false, err: 'no element for id' });
               try { el.click(); } catch (e) {
                 return JSON.stringify({ ok: false, err: String(e) });
@@ -168,7 +168,7 @@ public final class BrowserSession implements AutoCloseable {
     private static final String JS_FORCE_VALUE =
             """
             (args) => {
-              const el = document.querySelector('[data-skyvern-id="' + args.id + '"]');
+              const el = document.querySelector('[data-ui-agent-id="' + args.id + '"]');
               if (!el) return JSON.stringify({ ok: false, err: 'no element' });
               el.focus();
               if ('value' in el) {
@@ -195,7 +195,7 @@ public final class BrowserSession implements AutoCloseable {
     private static final String JS_ELEMENT_STATE =
             """
             (id) => {
-              const el = document.querySelector('[data-skyvern-id="' + id + '"]');
+              const el = document.querySelector('[data-ui-agent-id="' + id + '"]');
               if (!el) return JSON.stringify({ ok: false });
               const s = window.getComputedStyle(el);
               const disabled =
@@ -217,17 +217,17 @@ public final class BrowserSession implements AutoCloseable {
     private static final String JS_BLOCKER_AT_POINT =
             """
             (id) => {
-              const el = document.querySelector('[data-skyvern-id="' + id + '"]');
+              const el = document.querySelector('[data-ui-agent-id="' + id + '"]');
               if (!el) return JSON.stringify({ ok: false });
               const r  = el.getBoundingClientRect();
               const cx = r.left + r.width  / 2;
               const cy = r.top  + r.height / 2;
               const top = document.elementFromPoint(cx, cy);
               if (!top) return JSON.stringify({ ok: true, blocker_id: null });
-              // Walk up to find a data-skyvern-id on or near the topmost element
+              // Walk up to find a data-ui-agent-id on or near the topmost element
               let cur = top;
               for (let i = 0; i < 5 && cur; i++) {
-                const bid = cur.getAttribute('data-skyvern-id');
+                const bid = cur.getAttribute('data-ui-agent-id');
                 if (bid !== null && bid !== String(id)) {
                   return JSON.stringify({ ok: true, blocker_id: bid,
                                          blocker_tag: cur.tagName.toLowerCase() });
@@ -959,7 +959,7 @@ public final class BrowserSession implements AutoCloseable {
 
     /**
      * Uses {@code elementFromPoint} to find whether another element is covering the target.
-     * Returns JSON with {@code blocker_id} (the skyvern-id of the covering element, or null).
+     * Returns JSON with {@code blocker_id} (the ui-agent-id of the covering element, or null).
      */
     private JSONObject blockerAtPoint(int elementId) {
         try {
