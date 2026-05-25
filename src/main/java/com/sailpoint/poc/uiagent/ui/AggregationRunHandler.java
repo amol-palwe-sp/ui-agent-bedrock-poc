@@ -1,31 +1,23 @@
 package com.sailpoint.poc.uiagent.ui;
 
-import com.sailpoint.poc.uiagent.ActionLogger;
-import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
-import com.sailpoint.poc.uiagent.aggregation.AccountAggregator;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
-import com.sailpoint.poc.uiagent.aggregation.TableDetectionResult;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
+import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.PipelineStatus;
+import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import org.json.JSONObject;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.concurrent.BlockingQueue;
 
 /**
  * POST /api/aggregation/run  — starts the full aggregation pipeline in a background thread.
@@ -44,21 +36,13 @@ import java.util.stream.Collectors;
  * }
  * </pre>
  *
- * <h3>Pipeline executed in background thread</h3>
- * <ol>
- *   <li>browser.navigate(url)</li>
- *   <li>AgentLoop.run() — navigate to list page</li>
- *   <li>AccountAggregator.detectTable()</li>
- *   <li>AccountAggregator.paginationLoop()</li>
- *   <li>writeCsv() → {@code ./output/accounts_<ts>.csv}</li>
- *   <li>Store preview + stats in {@link AggregationServerState}</li>
- *   <li>Push {@code AGGREGATION_DONE:<rows>:<path>} to SSE</li>
- * </ol>
+ * <p>Uses {@link AgentPipeline} (AGGREGATION task type) which owns the full resource
+ * lifecycle (REQ-3.4) and uses {@link ProgressListener} instead of the former
+ * {@code System.setOut()} capture hack (REQ-3.5).
  */
 public final class AggregationRunHandler implements HttpHandler {
 
     private final AggregationServerState state;
-    private volatile PrintStream originalOut;
 
     public AggregationRunHandler(AggregationServerState state) {
         this.state = state;
@@ -88,36 +72,21 @@ public final class AggregationRunHandler implements HttpHandler {
         }
 
         String goalLine = req.optString("goalLine", "").trim();
-        String url      = req.optString("url", "").trim();
+        String url      = req.optString("url",      "").trim();
 
-        if (goalLine.isBlank()) {
-            sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}");
-            return;
-        }
-        if (url.isBlank()) {
-            sendJson(ex, 400, "{\"error\":\"Missing url\"}");
-            return;
-        }
+        if (goalLine.isBlank()) { sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}"); return; }
+        if (url.isBlank())      { sendJson(ex, 400, "{\"error\":\"Missing url\"}");      return; }
 
         JSONObject ppJson = req.optJSONObject("paginationPattern");
-        PaginationPattern pagination;
-        if (ppJson != null) {
-            pagination = new PaginationPattern(
-                    ppJson.optString("type",         "unknown").trim().toLowerCase(),
-                    ppJson.optString("description",  "").trim(),
-                    ppJson.optString("selectorHint", "").trim());
-        } else {
-            pagination = new PaginationPattern("unknown", "", "");
-        }
+        PaginationPattern pagination = ppJson != null
+                ? new PaginationPattern(
+                        ppJson.optString("type",         "unknown").trim().toLowerCase(),
+                        ppJson.optString("description",  "").trim(),
+                        ppJson.optString("selectorHint", "").trim())
+                : new PaginationPattern("unknown", "", "");
 
         state.agentRunning.set(true);
         state.logQueue.offer("STATUS:aggregating");
-
-        // ── Capture System.out → SSE log queue ────────────────────────────────
-        originalOut = System.out;
-        RunHandler.LogCapturingPrintStream capturer =
-                new RunHandler.LogCapturingPrintStream(originalOut, state.logQueue);
-        System.setOut(capturer);
 
         final String            finalUrl        = url;
         final String            finalGoal       = goalLine;
@@ -127,93 +96,43 @@ public final class AggregationRunHandler implements HttpHandler {
             try {
                 PocConfig config = new PocConfig();
 
-                try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                             config.awsRegion(), config.awsProfile(), config.bedrockModelId(),
-                             config.maxTokens(), config.temperature());
-                     BrowserSession browser = new BrowserSession(
-                             config.browserHeadless(),
-                             config.browserSlowMoMs(),
-                             config.browserViewportWidth(),
-                             config.browserViewportHeight(),
-                             config.browserStartMaximized(),
-                             config.browserFullscreenViewportWidth(),
-                             config.browserFullscreenViewportHeight(),
-                             config.actionTimeoutClickMs(),
-                             config.actionTimeoutTypeMs(),
-                             config.actionTimeoutNavigateMs(),
-                             config.interActionDelayMs());
-                     ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
+                // Build pipeline config — single source of truth for resource setup (REQ-3.3)
+                PipelineConfig pipelineConfig = PipelineConfig.builder()
+                        .taskType(PipelineConfig.TaskType.AGGREGATION)
+                        .startUrl(finalUrl)
+                        .goal(finalGoal)
+                        .paginationPattern(finalPagination)
+                        .bedrockConfig(config.bedrock())
+                        .browserConfig(config.browser())
+                        .agentConfig(config.agent())
+                        .aggregationConfig(config.aggregation())
+                        .build();
 
-                    // Phase 2 — Navigate to start URL
-                    state.logQueue.offer("LOG:INFO:Navigating to " + finalUrl + "...");
-                    browser.navigate(finalUrl);
+                // ProgressListener forwards pipeline output to SSE queue (REQ-3.5)
+                ProgressListener listener = new QueueProgressListener(state.logQueue);
 
-                    // Phase 2 continued — Run AgentLoop to reach list page
-                    state.logQueue.offer("LOG:INFO:Running AgentLoop to navigate to list page...");
-                    AgentLoop loop = new AgentLoop(
-                            bedrock, browser, actionLogger,
-                            config.agentMaxSteps(), finalGoal,
-                            config.agentNoProgressLimit())
-                            .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-                    TokenUsage loopUsage = loop.run();
+                // AgentPipeline owns all resource lifecycle (REQ-3.4)
+                PipelineResult result = AgentPipeline.run(pipelineConfig, listener);
 
-                    // Phase 3 — Detect table
-                    state.logQueue.offer("LOG:INFO:Detecting accounts table...");
-                    AccountAggregator aggregator = new AccountAggregator(browser, bedrock);
-                    TableDetectionResult tableResult = aggregator.detectTable();
-
-                    if (tableResult == null) {
-                        state.logQueue.offer("LOG:ERROR:No table found. Cannot aggregate accounts.");
-                        state.logQueue.offer("STATUS:ready");
-                        state.logQueue.offer("DONE:1");
-                        return;
-                    }
-
-                    state.logQueue.offer("LOG:INFO:Table detected: " + tableResult.selector());
-                    state.logQueue.offer("LOG:INFO:Columns: "
-                            + String.join(", ", tableResult.headers()));
-
-                    // Phase 4 — Pagination loop
-                    int maxPages = config.aggregationMaxPages();
-                    List<Map<String, String>> allRows =
-                            aggregator.paginationLoop(tableResult, finalPagination, maxPages);
-                    int pagesScraped = aggregator.pagesScraped();
-                    // Combine AgentLoop navigation tokens + AccountAggregator scraping tokens
-                    TokenUsage usage = loopUsage.add(aggregator.accumulatedUsage());
-
-                    state.logQueue.offer("LOG:INFO:Scraped " + pagesScraped
-                            + " page(s), " + allRows.size() + " total rows");
-
-                    // Phase 5 — Write CSV
-                    List<String> headers = resolveHeaders(tableResult.headers(), allRows);
-                    String csvPath = null;
-                    try {
-                        csvPath = writeCsv(allRows, headers, config.aggregationOutputDir());
-                        state.logQueue.offer("LOG:SUCCESS:CSV written to " + csvPath);
-                    } catch (IOException e) {
-                        state.logQueue.offer("LOG:ERROR:CSV write failed: " + e.getMessage());
-                    }
-
-                    // Store preview + stats in shared state
-                    storePreview(allRows, headers, pagesScraped, usage, csvPath);
-
-                    String donePath = csvPath != null ? csvPath : "";
-                    state.logQueue.offer("AGGREGATION_DONE:" + allRows.size() + ":" + donePath);
-                    state.logQueue.offer("STATUS:ready");
-                    state.logQueue.offer("DONE:0");
+                if (result.success()) {
+                    storeResults(result);
+                    state.logQueue.offer("AGGREGATION_DONE:"
+                            + result.rowsScraped() + ":" + result.csvPath());
+                } else {
+                    state.logQueue.offer("LOG:ERROR:Aggregation failed: "
+                            + result.exitReason()
+                            + (result.errorMessage().isBlank()
+                                    ? "" : " — " + result.errorMessage()));
                 }
 
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                state.logQueue.offer("LOG:WARNING:Aggregation interrupted by user");
                 state.logQueue.offer("STATUS:ready");
-                state.logQueue.offer("DONE:1");
+                state.logQueue.offer("DONE:" + (result.success() ? "0" : "1"));
+
             } catch (Exception e) {
                 state.logQueue.offer("LOG:ERROR:" + e.getMessage());
                 state.logQueue.offer("STATUS:ready");
                 state.logQueue.offer("DONE:1");
             } finally {
-                restoreOut();
                 state.agentRunning.set(false);
             }
         }, "aggregation-loop");
@@ -225,26 +144,20 @@ public final class AggregationRunHandler implements HttpHandler {
         sendJson(ex, 200, "{\"started\":true}");
     }
 
-    // ── Preview + Stats storage ───────────────────────────────────────────────
+    // ── Store preview + stats in shared state ────────────────────────────────
 
-    private void storePreview(
-            List<Map<String, String>> allRows,
-            List<String> headers,
-            int pagesScraped,
-            TokenUsage usage,
-            String csvPath) {
+    private void storeResults(PipelineResult result) {
+        List<Map<String,String>> preview = result.previewRows();
+        List<String>             headers = result.headers();
 
-        // Build previewRows JSON (up to 10 rows)
-        List<Map<String, String>> preview = allRows.size() > 10
-                ? allRows.subList(0, 10) : allRows;
-
+        // Build previewRows JSON
         StringBuilder previewSb = new StringBuilder("[");
         for (int i = 0; i < preview.size(); i++) {
             if (i > 0) previewSb.append(",");
             previewSb.append("{");
-            Map<String, String> row = preview.get(i);
+            Map<String,String> row = preview.get(i);
             boolean first = true;
-            for (Map.Entry<String, String> entry : row.entrySet()) {
+            for (Map.Entry<String,String> entry : row.entrySet()) {
                 if (!first) previewSb.append(",");
                 previewSb.append(quoted(entry.getKey())).append(":").append(quoted(entry.getValue()));
                 first = false;
@@ -256,76 +169,54 @@ public final class AggregationRunHandler implements HttpHandler {
 
         // Build stats JSON
         StringBuilder statsSb = new StringBuilder("{");
-        statsSb.append("\"totalRows\":").append(allRows.size());
-        statsSb.append(",\"pagesScraped\":").append(pagesScraped);
+        statsSb.append("\"totalRows\":").append(result.rowsScraped());
+        statsSb.append(",\"pagesScraped\":").append(result.pagesScraped());
         statsSb.append(",\"columns\":[");
         for (int i = 0; i < headers.size(); i++) {
             if (i > 0) statsSb.append(",");
             statsSb.append(quoted(headers.get(i)));
         }
         statsSb.append("]");
-        statsSb.append(",\"inputTokens\":").append(usage.inputTokens());
-        statsSb.append(",\"outputTokens\":").append(usage.outputTokens());
-        statsSb.append(",\"costUsd\":").append(usage.totalCostUsd());
+        statsSb.append(",\"inputTokens\":").append(result.totalUsage().inputTokens());
+        statsSb.append(",\"outputTokens\":").append(result.totalUsage().outputTokens());
+        statsSb.append(",\"costUsd\":").append(result.totalUsage().totalCostUsd());
         statsSb.append("}");
         state.lastStatsJson.set(statsSb.toString());
 
-        if (csvPath != null) state.lastCsvPath.set(csvPath);
+        if (!result.csvPath().isBlank()) state.lastCsvPath.set(result.csvPath());
     }
 
-    // ── CSV write ─────────────────────────────────────────────────────────────
+    // ── ProgressListener → SSE queue adapter ──────────────────────────────────
 
-    private static String writeCsv(
-            List<Map<String, String>> rows,
-            List<String> headers,
-            String outputDirStr) throws IOException {
+    private static final class QueueProgressListener implements ProgressListener {
 
-        Path outputDir = Path.of(outputDirStr);
-        Files.createDirectories(outputDir);
+        private final BlockingQueue<String> queue;
 
-        String timestamp = LocalDateTime.now()
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path filePath = outputDir.resolve("accounts_" + timestamp + ".csv");
+        QueueProgressListener(BlockingQueue<String> queue) {
+            this.queue = queue;
+        }
 
-        try (BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
-            writer.write(headers.stream()
-                    .map(AggregationRunHandler::csvEscape)
-                    .collect(Collectors.joining(",")));
-            writer.newLine();
+        @Override
+        public void onLog(String level, String message) {
+            if (message != null) queue.offer("LOG:" + level + ":" + message);
+        }
 
-            for (Map<String, String> row : rows) {
-                writer.write(headers.stream()
-                        .map(h -> csvEscape(row.getOrDefault(h, "")))
-                        .collect(Collectors.joining(",")));
-                writer.newLine();
+        @Override
+        public void onStatusChange(PipelineStatus status) {
+            switch (status) {
+                case NAVIGATING        -> queue.offer("LOG:INFO:Navigating to list page...");
+                case AGENT_RUNNING     -> queue.offer("LOG:INFO:Running agent loop...");
+                case DETECTING_TABLE   -> queue.offer("LOG:INFO:Detecting accounts table...");
+                case AGGREGATING       -> queue.offer("LOG:INFO:Scraping pages...");
+                case WRITING_CSV       -> queue.offer("LOG:INFO:Writing CSV...");
+                default -> {} // STARTING, DONE, FAILED, INTERRUPTED — handled elsewhere
             }
         }
 
-        return filePath.toAbsolutePath().toString();
-    }
-
-    private static String csvEscape(String value) {
-        if (value == null) return "";
-        String v = value.trim();
-        if (v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r")) {
-            return "\"" + v.replace("\"", "\"\"") + "\"";
-        }
-        return v;
-    }
-
-    private static List<String> resolveHeaders(
-            List<String> detected, List<Map<String, String>> rows) {
-        if (detected != null && !detected.isEmpty()) return detected;
-        if (!rows.isEmpty()) return new ArrayList<>(rows.get(0).keySet());
-        return List.of();
-    }
-
-    // ── Restore System.out ────────────────────────────────────────────────────
-
-    private void restoreOut() {
-        if (originalOut != null) {
-            System.setOut(originalOut);
-            originalOut = null;
+        @Override
+        public void onTokenUsage(TokenUsage usage) {
+            queue.offer("TOKEN_USAGE:" + usage.inputTokens()
+                    + ":" + usage.outputTokens() + ":" + usage.totalCostUsd());
         }
     }
 

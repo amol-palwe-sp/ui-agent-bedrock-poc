@@ -11,7 +11,14 @@ import org.json.JSONObject;
  * Claude to replace every sensitive credential value with a {@code {Token}} placeholder
  * (e.g. {@code enter "{Email}" in the Email field}) so that the UI can present labelled
  * inputs for the user to fill in before running the pipeline.
+ *
+ * @deprecated Replaced by {@link com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt} with
+ *             {@link com.sailpoint.poc.uiagent.video.VideoAnalysisRequest#aggregation(
+ *             com.sailpoint.poc.uiagent.video.VideoAnalysisRequest.CredentialMode)
+ *             VideoAnalysisRequest.aggregation(CredentialMode.PLACEHOLDER)}.
+ *             This class will be removed in a future cleanup pass.
  */
+@Deprecated(since = "refactor/unified-pipeline", forRemoval = true)
 public final class AggregationVideoAnalysisPrompt {
 
     private AggregationVideoAnalysisPrompt() {}

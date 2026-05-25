@@ -6,8 +6,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Parses and validates the {@code ```goal} block from Claude's raw response.
- * Implements the validation checklist from PROMPT.md.
+ * Parses and validates the {@code ```goal} block from Claude's raw response for
+ * provisioning workflows. Implements the validation checklist from PROMPT.md.
+ *
+ * <p>Aggregation flows use {@link VideoAnalysisResult#parse} on the JSON schema instead.
  */
 public final class GoalExtractor {
 

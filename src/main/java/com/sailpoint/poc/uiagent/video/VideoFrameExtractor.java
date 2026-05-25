@@ -1,6 +1,16 @@
 package com.sailpoint.poc.uiagent.video;
 
-import org.opencv.core.Core;
+import com.sailpoint.poc.uiagent.config.VideoConfig;
+import com.sailpoint.poc.uiagent.video.grid.GridDiffCalculator;
+import com.sailpoint.poc.uiagent.video.grid.GridDiffResult;
+import com.sailpoint.poc.uiagent.video.grid.ScreenZone;
+import com.sailpoint.poc.uiagent.video.grid.ZoneWeightMap;
+import com.sailpoint.poc.uiagent.video.pattern.PatternAnalysisPipeline;
+import com.sailpoint.poc.uiagent.video.scoring.FrameScorer;
+import com.sailpoint.poc.uiagent.video.scoring.PatternType;
+import com.sailpoint.poc.uiagent.video.scoring.ScoredFrame;
+import com.sailpoint.poc.uiagent.video.selection.ExtractionSummary;
+import com.sailpoint.poc.uiagent.video.selection.FrameSelector;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfByte;
 import org.opencv.core.MatOfInt;
@@ -16,11 +26,15 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
- * Extracts meaningful keyframes from an MP4 video file using OpenCV.
- * Frames are selected based on visual change detection to capture significant UI state changes.
+ * Extracts meaningful keyframes from an MP4 using grid differential analysis,
+ * zone weighting, pattern detection, and score-based selection (REQ-FS-7.2).
  */
 public final class VideoFrameExtractor {
 
@@ -28,51 +42,32 @@ public final class VideoFrameExtractor {
         nu.pattern.OpenCV.loadLocally();
     }
 
-    private final int maxFrames;
-    private final double changeThreshold;
-    private final double minGapSeconds;
-    /**
-     * Maximum seconds allowed between consecutively kept frames before a frame is forced through
-     * regardless of pixel-change magnitude. Catches subtle UI changes (checkbox toggles, radio
-     * button selections, small highlights) that fall below {@code changeThreshold}.
-     * Set to {@code Double.MAX_VALUE} to disable forced capture.
-     */
-    private final double maxForcedGapSeconds;
-    /**
-     * Maximum frame width in pixels before downscaling. Frames wider than this are scaled down
-     * proportionally before encoding. Reduces both HTTP payload size and Claude token cost
-     * (tokens scale with pixel count). Set to {@code 0} to disable resizing.
-     */
-    private final int frameMaxWidth;
-    /**
-     * JPEG quality for frame encoding (1–100). Lower values shrink payload at some visual cost.
-     * 75 is a good balance for UI screenshots. Replaces the previous lossless PNG encoding.
-     */
-    private final int jpegQuality;
-    private final String debugOutputDir;
+    private final VideoConfig config;
 
+    public VideoFrameExtractor(VideoConfig config) {
+        this.config = config;
+    }
+
+    /** @param maxFramesOverride overrides {@link VideoConfig#maxFrames()} for this run */
+    public VideoFrameExtractor(VideoConfig config, int maxFramesOverride) {
+        this.config = config.withMaxFrames(maxFramesOverride);
+    }
+
+    /** Backward-compatible constructor (REQ-FS-7.3). */
     public VideoFrameExtractor(int maxFrames, double changeThreshold, double minGapSeconds,
                                double maxForcedGapSeconds, int frameMaxWidth, int jpegQuality,
                                String debugOutputDir) {
-        this.maxFrames = maxFrames;
-        this.changeThreshold = changeThreshold;
-        this.minGapSeconds = minGapSeconds;
-        this.maxForcedGapSeconds = maxForcedGapSeconds;
-        this.frameMaxWidth = frameMaxWidth;
-        this.jpegQuality = jpegQuality;
-        this.debugOutputDir = debugOutputDir;
+        this(VideoConfig.legacy(maxFrames, changeThreshold, minGapSeconds, maxForcedGapSeconds,
+                frameMaxWidth, jpegQuality, debugOutputDir));
     }
 
     public VideoFrameExtractor() {
-        this(80, 0.02, 0.5, 3.0, 1280, 75, null);
+        this(VideoConfig.defaults());
     }
 
     /**
-     * Extracts keyframes from the specified video file.
-     *
      * @param videoPath path to the MP4 video file
      * @return ordered list of JPEG-encoded frames as byte arrays
-     * @throws IOException if the video cannot be read or frames cannot be processed
      */
     public List<byte[]> extractFrames(String videoPath) throws IOException {
         File videoFile = new File(videoPath);
@@ -83,6 +78,12 @@ public final class VideoFrameExtractor {
             throw new IOException("Only MP4 files are supported: " + videoPath);
         }
 
+        GridDiffCalculator diffCalc = new GridDiffCalculator(config);
+        ZoneWeightMap zoneMap = diffCalc.zoneMap();
+        FrameScorer scorer = new FrameScorer(config);
+        PatternAnalysisPipeline patterns = new PatternAnalysisPipeline(config);
+        FrameSelector selector = new FrameSelector(config, diffCalc);
+
         VideoCapture capture = new VideoCapture(videoPath);
         if (!capture.isOpened()) {
             throw new IOException("Failed to open video: " + videoPath);
@@ -90,53 +91,43 @@ public final class VideoFrameExtractor {
 
         try {
             double fps = capture.get(Videoio.CAP_PROP_FPS);
-            if (fps <= 0) fps = 30.0;
+            if (fps <= 0) {
+                fps = 30.0;
+            }
+            double frameCount = capture.get(Videoio.CAP_PROP_FRAME_COUNT);
+            double duration = frameCount > 0 ? frameCount / fps : 0.0;
 
-            List<FrameData> keptFrames = new ArrayList<>();
-            Mat currentFrame = new Mat();
-            Mat previousGray = null;
-            int frameIndex = 0;
-            double lastKeptTime = -minGapSeconds;
+            ScanResult scan = scanAndScore(capture, fps, diffCalc, scorer);
+            List<ScoredFrame> candidates = scan.frames();
+            int totalFramesRead = scan.totalFramesRead();
 
-            while (capture.read(currentFrame)) {
-                double currentTime = frameIndex / fps;
-                
-                Mat currentGray = new Mat();
-                Imgproc.cvtColor(currentFrame, currentGray, Imgproc.COLOR_BGR2GRAY);
+            markMandatory(candidates, zoneMap);
+            patterns.analyze(candidates);
 
-                boolean keepFrame = false;
-                double changePercent = 0.0;
+            FrameSelector.SelectionResult selection =
+                    selector.select(candidates, config.maxFrames());
 
-                if (previousGray == null) {
-                    keepFrame = true;
-                } else if (currentTime - lastKeptTime >= minGapSeconds) {
-                    changePercent = computeChangePercent(previousGray, currentGray);
-                    keepFrame = changePercent >= changeThreshold
-                            || (currentTime - lastKeptTime >= maxForcedGapSeconds);
-                }
+            encodeSelectedFrames(videoPath, selection.frames());
 
-                if (keepFrame) {
-                    byte[] pngBytes = matToJpeg(currentFrame);
-                    keptFrames.add(new FrameData(frameIndex, currentTime, changePercent, pngBytes));
-                    lastKeptTime = currentTime;
-                    if (previousGray != null) previousGray.release();
-                    previousGray = currentGray;
-                } else {
-                    currentGray.release();
-                }
-
-                frameIndex++;
+            if (config.debugFramesDir() != null && !config.debugFramesDir().isBlank()) {
+                encodeAllCandidateFrames(videoPath, candidates);
+                saveDebugFrames(candidates, selection.frames());
             }
 
-            if (previousGray != null) previousGray.release();
-            currentFrame.release();
+            ExtractionSummary summary = new ExtractionSummary(
+                    duration,
+                    totalFramesRead,
+                    candidates.size(),
+                    candidates,
+                    selection.frames(),
+                    selection.duplicatesRemoved(),
+                    selection.maxGapSeconds());
+            summary.print(videoPath);
 
-            List<byte[]> result = selectFinalFrames(keptFrames);
-
-            if (debugOutputDir != null && !debugOutputDir.isBlank()) {
-                saveDebugFrames(keptFrames, result);
+            List<byte[]> result = new ArrayList<>();
+            for (ScoredFrame f : selection.frames()) {
+                result.add(f.jpegBytes());
             }
-
             return result;
 
         } finally {
@@ -144,112 +135,152 @@ public final class VideoFrameExtractor {
         }
     }
 
-    private double computeChangePercent(Mat prev, Mat curr) {
-        Mat diff = new Mat();
-        Core.absdiff(prev, curr, diff);
-        double totalPixels = diff.rows() * diff.cols();
-        double changedPixels = Core.countNonZero(diff);
-        diff.release();
-        return changedPixels / totalPixels;
+    private record ScanResult(List<ScoredFrame> frames, int totalFramesRead) {}
+
+    private ScanResult scanAndScore(
+            VideoCapture capture,
+            double fps,
+            GridDiffCalculator diffCalc,
+            FrameScorer scorer) {
+        List<ScoredFrame> candidates = new ArrayList<>();
+        Mat currentFrame = new Mat();
+        Mat previousGray = null;
+        int frameIndex = 0;
+
+        while (capture.read(currentFrame)) {
+            double frameTime = frameIndex / fps;
+            Mat currentGray = new Mat();
+            Imgproc.cvtColor(currentFrame, currentGray, Imgproc.COLOR_BGR2GRAY);
+
+            GridDiffResult diff = previousGray == null
+                    ? diffCalc.firstFrame()
+                    : diffCalc.compute(previousGray, currentGray);
+
+            candidates.add(scorer.score(frameIndex, frameTime, diff));
+
+            if (previousGray != null) {
+                previousGray.release();
+            }
+            previousGray = currentGray;
+            frameIndex++;
+        }
+
+        if (previousGray != null) {
+            previousGray.release();
+        }
+        currentFrame.release();
+        return new ScanResult(candidates, frameIndex);
     }
 
-    /**
-     * Encodes a frame as JPEG, optionally downscaling it first.
-     *
-     * <p>Downscaling reduces both the HTTP payload sent to Bedrock and the Claude token cost
-     * (which scales with pixel count). Switching from lossless PNG to JPEG at quality 75
-     * cuts payload by ~90% for a typical 1920×1080 browser screenshot with no meaningful
-     * loss of UI text legibility.
-     */
+    private void markMandatory(List<ScoredFrame> frames, ZoneWeightMap zoneMap) {
+        if (!frames.isEmpty()) {
+            ScoredFrame first = frames.get(0);
+            first.setMandatory(true);
+            first.setPatternType(PatternType.MANDATORY);
+        }
+        for (ScoredFrame f : frames) {
+            if (urlBarSignificant(f.diff(), zoneMap)) {
+                f.setMandatory(true);
+            }
+        }
+    }
+
+    private boolean urlBarSignificant(GridDiffResult diff, ZoneWeightMap zoneMap) {
+        boolean[][] changed = diff.cellChanged();
+        int n = changed.length;
+        int urlTotal = 0;
+        int urlChanged = 0;
+        for (int r = 0; r < n; r++) {
+            for (int c = 0; c < n; c++) {
+                if (zoneMap.zone(r, c) == ScreenZone.URL_BAR) {
+                    urlTotal++;
+                    if (changed[r][c]) {
+                        urlChanged++;
+                    }
+                }
+            }
+        }
+        if (urlTotal == 0) {
+            return false;
+        }
+        return ((double) urlChanged / urlTotal) >= config.urlBarMandatoryThreshold();
+    }
+
+    private void encodeSelectedFrames(String videoPath, List<ScoredFrame> selected) throws IOException {
+        if (selected.isEmpty()) {
+            return;
+        }
+        Set<Integer> needed = new HashSet<>();
+        for (ScoredFrame f : selected) {
+            needed.add(f.frameIndex());
+        }
+        Map<Integer, byte[]> encoded = new HashMap<>();
+
+        VideoCapture capture = new VideoCapture(videoPath);
+        if (!capture.isOpened()) {
+            throw new IOException("Failed to re-open video for encoding: " + videoPath);
+        }
+        try {
+            Mat frame = new Mat();
+            int index = 0;
+            while (capture.read(frame)) {
+                if (needed.contains(index)) {
+                    encoded.put(index, matToJpeg(frame));
+                }
+                index++;
+                if (encoded.size() == needed.size()) {
+                    break;
+                }
+            }
+            frame.release();
+        } finally {
+            capture.release();
+        }
+
+        for (ScoredFrame f : selected) {
+            byte[] bytes = encoded.get(f.frameIndex());
+            if (bytes == null) {
+                throw new IOException("Failed to encode frame index " + f.frameIndex());
+            }
+            f.setJpegBytes(bytes);
+        }
+    }
+
     private byte[] matToJpeg(Mat frame) {
         Mat toEncode = frame;
-        Mat resized  = null;
+        Mat resized = null;
 
-        if (frameMaxWidth > 0 && frame.cols() > frameMaxWidth) {
-            double scale = (double) frameMaxWidth / frame.cols();
+        if (config.frameMaxWidth() > 0 && frame.cols() > config.frameMaxWidth()) {
+            double scale = (double) config.frameMaxWidth() / frame.cols();
             int targetHeight = (int) Math.round(frame.rows() * scale);
             resized = new Mat();
-            Imgproc.resize(frame, resized, new Size(frameMaxWidth, targetHeight));
+            Imgproc.resize(frame, resized, new Size(config.frameMaxWidth(), targetHeight));
             toEncode = resized;
         }
 
         try {
             MatOfByte buffer = new MatOfByte();
-            MatOfInt params  = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, jpegQuality);
+            MatOfInt params = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, config.jpegQuality());
             Imgcodecs.imencode(".jpg", toEncode, buffer, params);
             byte[] bytes = buffer.toArray();
             buffer.release();
             params.release();
             return bytes;
         } finally {
-            if (resized != null) resized.release();
+            if (resized != null) {
+                resized.release();
+            }
         }
     }
 
-    /**
-     * Reduces {@code keptFrames} to at most {@code maxFrames} while preserving temporal
-     * coverage across the entire recording.
-     *
-     * <p>When the frame count exceeds the cap the timeline is divided into equal-width time
-     * buckets and the highest-change frame within each bucket is kept.  This guarantees that
-     * every segment of the recording is represented — a low-change action (checkbox toggle,
-     * radio button click) near the end of the video can no longer be crowded out by
-     * high-change animated transitions that occurred earlier.
-     */
-    private List<byte[]> selectFinalFrames(List<FrameData> keptFrames) {
-        if (keptFrames.isEmpty()) {
-            return new ArrayList<>();
+    private void saveDebugFrames(List<ScoredFrame> allCandidates, List<ScoredFrame> selected)
+            throws IOException {
+        Path debugDir = Path.of(config.debugFramesDir());
+        Set<Integer> selectedIdx = new HashSet<>();
+        for (ScoredFrame s : selected) {
+            selectedIdx.add(s.frameIndex());
         }
 
-        if (keptFrames.size() <= maxFrames) {
-            List<byte[]> result = new ArrayList<>();
-            for (FrameData fd : keptFrames) {
-                result.add(fd.pngBytes);
-            }
-            return result;
-        }
-
-        List<byte[]> result = new ArrayList<>();
-        result.add(keptFrames.get(0).pngBytes);
-
-        int middleSlots = maxFrames - 2;
-        List<FrameData> middleFrames = new ArrayList<>(keptFrames.subList(1, keptFrames.size() - 1));
-
-        List<FrameData> selected;
-        if (middleFrames.size() <= middleSlots) {
-            selected = middleFrames;
-        } else {
-            // Stratified temporal sampling: pick best frame per equal-width time bucket
-            double firstTime  = middleFrames.get(0).frameTime();
-            double lastTime   = middleFrames.get(middleFrames.size() - 1).frameTime();
-            double bucketSize = (lastTime - firstTime) / middleSlots;
-
-            selected = new ArrayList<>();
-            for (int b = 0; b < middleSlots; b++) {
-                double bucketStart = firstTime + b * bucketSize;
-                double bucketEnd   = (b == middleSlots - 1)
-                        ? lastTime + 0.001   // inclusive of the last frame
-                        : bucketStart + bucketSize;
-                middleFrames.stream()
-                        .filter(f -> f.frameTime() >= bucketStart && f.frameTime() < bucketEnd)
-                        .max(Comparator.comparingDouble(FrameData::changePercent))
-                        .ifPresent(selected::add);
-            }
-            selected.sort(Comparator.comparingInt(FrameData::frameIndex));
-        }
-
-        for (FrameData fd : selected) {
-            result.add(fd.pngBytes);
-        }
-
-        result.add(keptFrames.get(keptFrames.size() - 1).pngBytes);
-
-        return result;
-    }
-
-    private void saveDebugFrames(List<FrameData> allKeptFrames, List<byte[]> finalFrames) throws IOException {
-        Path debugDir = Path.of(debugOutputDir);
-        
         if (Files.exists(debugDir)) {
             Files.walk(debugDir)
                     .sorted(Comparator.reverseOrder())
@@ -257,31 +288,74 @@ public final class VideoFrameExtractor {
                     .forEach(p -> {
                         try {
                             Files.delete(p);
-                        } catch (IOException ignored) {}
+                        } catch (IOException ignored) {
+                        }
                     });
         } else {
             Files.createDirectories(debugDir);
         }
 
-        int index = 0;
-        for (FrameData fd : allKeptFrames) {
-            boolean isSelected = false;
-            for (byte[] finalFrame : finalFrames) {
-                if (finalFrame == fd.pngBytes) {
-                    isSelected = true;
+        int written = 0;
+        for (ScoredFrame f : allCandidates) {
+            byte[] bytes = f.jpegBytes();
+            if (bytes == null && selectedIdx.contains(f.frameIndex())) {
+                continue;
+            }
+            boolean isSelected = selectedIdx.contains(f.frameIndex());
+            String prefix = f.isMandatory() ? "MANDATORY_"
+                    : isSelected ? "SELECTED_" : "dropped_";
+            String filename = String.format(
+                    "%sframe%04d_%.2fs_score%.2f_%s.jpg",
+                    prefix,
+                    f.frameIndex(),
+                    f.frameTime(),
+                    f.finalScore(),
+                    f.patternType());
+            if (bytes != null) {
+                Files.write(debugDir.resolve(filename), bytes);
+                written++;
+            }
+        }
+
+        System.out.printf("Debug frames saved to: %s (%d files)%n", debugDir.toAbsolutePath(), written);
+    }
+
+    private void encodeAllCandidateFrames(String videoPath, List<ScoredFrame> candidates)
+            throws IOException {
+        Set<Integer> needed = new HashSet<>();
+        for (ScoredFrame f : candidates) {
+            if (f.jpegBytes() == null) {
+                needed.add(f.frameIndex());
+            }
+        }
+        if (needed.isEmpty()) {
+            return;
+        }
+        Map<Integer, byte[]> encoded = new HashMap<>();
+        VideoCapture capture = new VideoCapture(videoPath);
+        if (!capture.isOpened()) {
+            return;
+        }
+        try {
+            Mat frame = new Mat();
+            int index = 0;
+            while (capture.read(frame)) {
+                if (needed.contains(index)) {
+                    encoded.put(index, matToJpeg(frame));
+                }
+                index++;
+                if (encoded.size() == needed.size()) {
                     break;
                 }
             }
-
-            String prefix = isSelected ? "SELECTED_" : "dropped_";
-            String filename = String.format("%sframe%04d_%.2fs.jpg", prefix, fd.frameIndex, fd.frameTime);
-            Path filePath = debugDir.resolve(filename);
-            Files.write(filePath, fd.pngBytes);
-            index++;
+            frame.release();
+        } finally {
+            capture.release();
         }
-
-        System.out.printf("Debug frames saved to: %s (%d files)%n", debugDir.toAbsolutePath(), index);
+        for (ScoredFrame f : candidates) {
+            if (f.jpegBytes() == null) {
+                f.setJpegBytes(encoded.get(f.frameIndex()));
+            }
+        }
     }
-
-    private record FrameData(int frameIndex, double frameTime, double changePercent, byte[] pngBytes) {}
 }

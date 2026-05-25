@@ -25,11 +25,15 @@ import java.util.UUID;
  * POST /api/generate
  *
  * <p>Accepts a multipart/form-data request containing an MP4 video upload plus
- * optional overrides (url, maxFrames). Runs the full video → Claude → goal pipeline
- * and returns a JSON result.
+ * optional overrides (url, maxFrames). Runs the video → {@link VideoToGoalPrompt}
+ * → Claude → {@link GoalExtractor} pipeline and returns a JSON result.
  *
  * <p>Progress is pushed to {@link AgentUIServer.ServerState#logQueue} so the SSE
  * stream can relay it to the browser in real time.
+ *
+ * <p>The response includes both the legacy {@code goalLine} field (for backward
+ * compatibility with the existing UI form) and the new {@code navigationGoal} /
+ * {@code targetUrl} fields from the unified schema.
  */
 public final class GenerateHandler implements HttpHandler {
 
@@ -57,8 +61,6 @@ public final class GenerateHandler implements HttpHandler {
                 return;
             }
 
-            // Commons FileUpload needs a javax.servlet.http.HttpServletRequest-like
-            // context; we bridge it with a minimal RequestContext adapter.
             FileItemFactory factory = new DiskFileItemFactory();
             ServletFileUpload upload = new ServletFileUpload(factory);
             upload.setSizeMax(MAX_UPLOAD_BYTES);
@@ -74,12 +76,10 @@ public final class GenerateHandler implements HttpHandler {
                 if (!item.isFormField() && "video".equals(item.getFieldName())) {
                     String name = item.getName();
                     if (name == null || !name.toLowerCase().endsWith(".mp4")) {
-                        sendJson(ex, 400, "{\"error\":\"Only MP4 supported\"}");
-                        return;
+                        sendJson(ex, 400, "{\"error\":\"Only MP4 supported\"}"); return;
                     }
                     if (item.getSize() > MAX_UPLOAD_BYTES) {
-                        sendJson(ex, 400, "{\"error\":\"File exceeds 500MB\"}");
-                        return;
+                        sendJson(ex, 400, "{\"error\":\"File exceeds 500MB\"}"); return;
                     }
                     videoBytes = item.get();
                 } else if (item.isFormField()) {
@@ -94,11 +94,9 @@ public final class GenerateHandler implements HttpHandler {
             }
 
             if (videoBytes == null || videoBytes.length == 0) {
-                sendJson(ex, 400, "{\"error\":\"No video file received\"}");
-                return;
+                sendJson(ex, 400, "{\"error\":\"No video file received\"}"); return;
             }
 
-            // ── Save to temp file (OpenCV needs a file path) ───────────────────
             tempFile = Files.createTempFile("uiagent-upload-" + UUID.randomUUID(), ".mp4");
             Files.write(tempFile, videoBytes);
 
@@ -107,17 +105,11 @@ public final class GenerateHandler implements HttpHandler {
             push("LOG:INFO:Extracting frames from video...");
 
             PocConfig config = new PocConfig();
-            int effectiveMaxFrames  = maxFrames != null ? maxFrames
-                    : Integer.parseInt(config.optional("video.max.frames", "80"));
-            double changeThreshold  = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
-            double minGapSeconds    = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
-            double maxForcedGapSecs = Double.parseDouble(config.optional("video.max.forced.gap.seconds", "3.0"));
-            int    frameMaxWidth    = Integer.parseInt(config.optional("video.frame.max.width", "1280"));
-            int    jpegQuality      = Integer.parseInt(config.optional("video.jpeg.quality", "75"));
+            int    effectiveMaxFrames = maxFrames != null ? maxFrames : config.video().maxFrames();
 
             VideoFrameExtractor extractor = new VideoFrameExtractor(
-                    effectiveMaxFrames, changeThreshold, minGapSeconds, maxForcedGapSecs,
-                    frameMaxWidth, jpegQuality, null);
+                    config.video().withMaxFrames(effectiveMaxFrames));
+
             List<byte[]> frames = extractor.extractFrames(tempFile.toString());
 
             if (frames.isEmpty()) {
@@ -132,17 +124,16 @@ public final class GenerateHandler implements HttpHandler {
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
             push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
 
-            String userPrompt = (overrideUrl != null && !overrideUrl.isBlank())
+            // Original provisioning prompt (```goal block + full gradle line) — same as runVideo CLI
+            String userPrompt = overrideUrl != null && !overrideUrl.isBlank()
                     ? VideoToGoalPrompt.userPromptWithUrl(overrideUrl)
                     : VideoToGoalPrompt.USER_PROMPT;
 
             InvokeResult result;
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
-                    config.awsRegion(),
-                    config.awsProfile(),
-                    config.bedrockModelId(),
-                    config.maxTokens(),
-                    config.temperature())) {
+                    config.bedrock().region(), config.bedrock().profile(),
+                    config.bedrock().modelId(), config.bedrock().maxTokens(),
+                    config.bedrock().temperature())) {
                 result = client.invokeWithMultipleImages(
                         VideoToGoalPrompt.SYSTEM_PROMPT, userPrompt, frames);
             }
@@ -150,12 +141,14 @@ public final class GenerateHandler implements HttpHandler {
             push("LOG:SUCCESS:Claude responded — extracting goal...");
 
             GoalExtractor.ExtractionResult extraction = GoalExtractor.extract(result.text());
-            state.lastGoalLine.set(extraction.goalLine() != null ? extraction.goalLine() : "");
+            String goalLine = extraction.goalLine();
+            if (goalLine != null) {
+                state.lastGoalLine.set(goalLine);
+            }
 
             push("STATUS:ready");
             push("DONE:" + (extraction.isValid() ? "0" : "1"));
 
-            // ── Build JSON response ────────────────────────────────────────────
             String json = buildResultJson(extraction, result, frames.size());
             sendJson(ex, 200, json);
 
@@ -179,33 +172,23 @@ public final class GenerateHandler implements HttpHandler {
         state.logQueue.offer(msg);
     }
 
-    private static void sendJson(HttpExchange ex, int code, String json) throws IOException {
-        byte[] body = json.getBytes();
-        ex.getResponseHeaders().set("Content-Type", "application/json");
-        ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        ex.sendResponseHeaders(code, body.length);
-        try (OutputStream out = ex.getResponseBody()) {
-            out.write(body);
-        }
-    }
-
-    private static void sendError(HttpExchange ex, int code, String msg) throws IOException {
-        byte[] body = msg.getBytes();
-        ex.sendResponseHeaders(code, body.length);
-        ex.getResponseBody().write(body);
-        ex.getResponseBody().close();
-    }
-
     private static String buildResultJson(
             GoalExtractor.ExtractionResult extraction,
             InvokeResult result,
             int frameCount) {
 
+        List<String> steps  = extraction.steps();
+        List<String> issues = extraction.issues();
+        String goalLine     = extraction.goalLine();
+        String url          = extraction.url();
+        String navigationGoal = steps.isEmpty() ? "" : String.join(", then ", steps);
+
         StringBuilder sb = new StringBuilder("{");
-        sb.append("\"goalLine\":").append(quoted(extraction.goalLine()));
-        sb.append(",\"url\":").append(quoted(extraction.url()));
+        sb.append("\"goalLine\":").append(quoted(goalLine));
+        sb.append(",\"url\":").append(quoted(url));
+        sb.append(",\"targetUrl\":").append(quoted(url));
+        sb.append(",\"navigationGoal\":").append(quoted(navigationGoal));
         sb.append(",\"steps\":[");
-        List<String> steps = extraction.steps();
         for (int i = 0; i < steps.size(); i++) {
             if (i > 0) sb.append(",");
             sb.append(quoted(steps.get(i)));
@@ -213,7 +196,6 @@ public final class GenerateHandler implements HttpHandler {
         sb.append("]");
         sb.append(",\"isValid\":").append(extraction.isValid());
         sb.append(",\"issues\":[");
-        List<String> issues = extraction.issues();
         for (int i = 0; i < issues.size(); i++) {
             if (i > 0) sb.append(",");
             sb.append(quoted(issues.get(i)));
@@ -227,20 +209,29 @@ public final class GenerateHandler implements HttpHandler {
         return sb.toString();
     }
 
+    private static void sendJson(HttpExchange ex, int code, String json) throws IOException {
+        byte[] body = json.getBytes();
+        ex.getResponseHeaders().set("Content-Type", "application/json");
+        ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        ex.sendResponseHeaders(code, body.length);
+        try (OutputStream out = ex.getResponseBody()) { out.write(body); }
+    }
+
+    private static void sendError(HttpExchange ex, int code, String msg) throws IOException {
+        byte[] body = msg.getBytes();
+        ex.sendResponseHeaders(code, body.length);
+        ex.getResponseBody().write(body);
+        ex.getResponseBody().close();
+    }
+
     private static String quoted(String s) {
         if (s == null) return "null";
-        return "\"" + s.replace("\\", "\\\\")
-                       .replace("\"", "\\\"")
-                       .replace("\n", "\\n")
-                       .replace("\r", "\\r") + "\"";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+                       .replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
 
     // ── Commons FileUpload adapter ────────────────────────────────────────────
 
-    /**
-     * Minimal bridge between {@link HttpExchange} and the interface expected by
-     * {@link ServletFileUpload#parseRequest}.
-     */
     private static final class HttpServletRequestAdapter
             implements org.apache.commons.fileupload.RequestContext {
 
@@ -252,9 +243,9 @@ public final class GenerateHandler implements HttpHandler {
             this.contentType = contentType;
         }
 
-        @Override public String   getCharacterEncoding() { return "UTF-8"; }
-        @Override public String   getContentType()        { return contentType; }
-        @Override public int      getContentLength()      { return -1; }
-        @Override public InputStream getInputStream()     { return ex.getRequestBody(); }
+        @Override public String      getCharacterEncoding() { return "UTF-8"; }
+        @Override public String      getContentType()        { return contentType; }
+        @Override public int         getContentLength()      { return -1; }
+        @Override public InputStream getInputStream()        { return ex.getRequestBody(); }
     }
 }

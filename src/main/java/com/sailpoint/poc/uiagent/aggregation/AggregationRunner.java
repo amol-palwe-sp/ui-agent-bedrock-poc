@@ -1,29 +1,25 @@
 package com.sailpoint.poc.uiagent.aggregation;
 
-import com.sailpoint.poc.uiagent.ActionLogger;
-import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
-import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
+import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
- * Step 2 of the two-step aggregation pipeline — navigate, detect table, scrape all pages, write CSV.
+ * Step 2 of the two-step aggregation pipeline — navigate, detect table, scrape all pages,
+ * write CSV.
  *
  * <h2>Two-step workflow (recommended)</h2>
  * <pre>
@@ -35,14 +31,15 @@ import java.util.stream.Collectors;
  *   ./gradlew runAggregation \
  *     --args='--plan=./output/aggregation-plan_20260430_140000.json \
  *             --url=https://admin.google.com/ac/users \
- *             --goal=enter "user@example.com" in Email, then click Next, then enter "password" in password, then click Next'
+ *             --goal=enter "user@example.com" in Email, then click Next,
+ *                    then enter "password" in password field, then click Next'
  * </pre>
  *
  * <h2>One-step workflow (legacy — still supported)</h2>
  * <pre>
  *   ./gradlew runAggregation \
  *     --args='--video=recording.mp4 --url=https://admin.google.com/ac/users \
- *             --goal=enter "user@example.com" in Email, then click Next, then enter "password" in password, then click Next'
+ *             --goal=enter "user@example.com" in Email, then click Next, ...'
  * </pre>
  *
  * <h2>Argument reference</h2>
@@ -73,16 +70,12 @@ public final class AggregationRunner {
             return 1;
         }
 
-        PocConfig config = new PocConfig();
-        int    maxPages  = config.aggregationMaxPages();
-        String outputDir = config.aggregationOutputDir();
+        PocConfig config  = new PocConfig();
+        int    maxPages   = config.aggregationMaxPages();
+        String outputDir  = config.aggregationOutputDir();
 
-        TokenUsage              totalUsage  = TokenUsage.ZERO;
+        TokenUsage videoUsage = TokenUsage.ZERO;
         AggregationVideoAnalysis videoAnalysis;
-        TableDetectionResult    tableResult  = null;
-        List<Map<String, String>> allRows    = new ArrayList<>();
-        int    pagesScraped   = 0;
-        String outputFilePath = null;
 
         // ── Phase 1 — Video Analysis OR load plan ───────────────────────────
         if (parsed.plan() != null) {
@@ -97,7 +90,7 @@ public final class AggregationRunner {
             System.out.println("Description        : " + plan.paginationPattern().description());
             System.out.println("Selector hint      : " + plan.paginationPattern().selectorHint());
         } else {
-            // One-step path (legacy): video → Claude → extract plan
+            // One-step path: video → VideoAnalysisPrompt → VideoAnalysisResult
             printSeparator("Phase 1 — Video Analysis");
 
             File videoFile = new File(parsed.video());
@@ -106,14 +99,7 @@ public final class AggregationRunner {
                 return 1;
             }
 
-            VideoFrameExtractor extractor = new VideoFrameExtractor(
-                    config.videoMaxFrames(),
-                    config.videoChangeThreshold(),
-                    config.videoMinGapSeconds(),
-                    config.videoMaxForcedGapSeconds(),
-                    config.videoFrameMaxWidth(),
-                    config.videoJpegQuality(),
-                    config.videoDebugFramesDir());
+            VideoFrameExtractor extractor = new VideoFrameExtractor(config.video());
 
             System.out.println("Extracting frames from: " + videoFile.getAbsolutePath());
             List<byte[]> frames = extractor.extractFrames(parsed.video());
@@ -124,25 +110,30 @@ public final class AggregationRunner {
                 return 1;
             }
 
-            // Temporary client just for Phase 1 — closed before main try-with-resources opens
+            // Short-lived Bedrock client for video analysis only (REQ-3.4: pipeline owns its own)
+            VideoAnalysisRequest request = VideoAnalysisRequest.aggregation(
+                    VideoAnalysisRequest.CredentialMode.LITERAL, parsed.url());
+            VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
+
+            System.out.println("Calling Claude for video analysis (model: "
+                    + config.bedrockModelId() + ")...");
+
             try (BedrockAnthropicClient phase1Bedrock = new BedrockAnthropicClient(
-                    config.awsRegion(), config.awsProfile(),
-                    config.bedrockModelId(), config.maxTokens(), config.temperature())) {
+                    config.bedrock().region(), config.bedrock().profile(),
+                    config.bedrock().modelId(), config.bedrock().maxTokens(),
+                    config.bedrock().temperature())) {
 
-                System.out.println("Calling Claude for video analysis...");
                 InvokeResult videoResult = phase1Bedrock.invokeWithMultipleImages(
-                        AggregationVideoPrompt.SYSTEM_PROMPT,
-                        AggregationVideoPrompt.userPromptWithUrl(parsed.url()),
-                        frames);
-                totalUsage = totalUsage.add(videoResult.usage());
-                System.out.println("Video analysis tokens: " + videoResult.usage());
+                        prompts.systemPrompt(), prompts.userPrompt(), frames);
+                videoUsage = videoResult.usage();
+                System.out.println("Video analysis tokens: " + videoUsage);
 
-                try {
-                    videoAnalysis = AggregationVideoPrompt.parse(videoResult.text());
-                } catch (IllegalArgumentException e) {
-                    System.err.println("ERROR: " + e.getMessage());
+                VideoAnalysisResult result = VideoAnalysisResult.parse(videoResult.text(), request);
+                if (!result.isValid()) {
+                    System.err.println("ERROR: Video analysis parse failed — " + result.issues());
                     return 1;
                 }
+                videoAnalysis = result.toAggregationVideoAnalysis();
             }
 
             System.out.println();
@@ -166,151 +157,38 @@ public final class AggregationRunner {
             System.out.println("  " + effectiveGoal);
         }
 
-        final AggregationVideoAnalysis resolvedAnalysis = videoAnalysis;
+        // ── Phases 2-5 — Navigate + Detect + Aggregate + CSV ─────────────────
+        // AgentPipeline owns all resource lifecycle (REQ-3.4).
+        printSeparator("Phase 2 — Navigation / Phase 3 — Table Detection / Phase 4-5 — Aggregation + CSV");
 
-        // ── Phases 2-5: browser session ──────────────────────────────────────
-        try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                        config.awsRegion(),
-                        config.awsProfile(),
-                        config.bedrockModelId(),
-                        config.maxTokens(),
-                        config.temperature());
-                BrowserSession browser = new BrowserSession(
-                        config.browserHeadless(),
-                        config.browserSlowMoMs(),
-                        config.browserViewportWidth(),
-                        config.browserViewportHeight(),
-                        config.browserStartMaximized(),
-                        config.browserFullscreenViewportWidth(),
-                        config.browserFullscreenViewportHeight(),
-                        config.actionTimeoutClickMs(),
-                        config.actionTimeoutTypeMs(),
-                        config.actionTimeoutNavigateMs(),
-                        config.interActionDelayMs());
-                ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
+        PipelineConfig pipelineConfig = PipelineConfig.builder()
+                .taskType(PipelineConfig.TaskType.AGGREGATION)
+                .startUrl(parsed.url())
+                .goal(effectiveGoal)
+                .paginationPattern(videoAnalysis.paginationPattern())
+                .bedrockConfig(config.bedrock())
+                .browserConfig(config.browser())
+                .agentConfig(config.agent())
+                .aggregationConfig(config.aggregation())
+                .build();
 
-            // ── Phase 2 — Browser Navigation ─────────────────────────────────
-            printSeparator("Phase 2 — Browser Navigation");
-
-            System.out.println("Navigating to: " + parsed.url());
-            browser.navigate(parsed.url());
-            System.out.println("Current URL: " + browser.currentUrl());
-            System.out.println();
-            System.out.println("Running AgentLoop with goal...");
-            System.out.println("(AgentLoop token usage is printed per step below)");
-            System.out.println();
-
-            AgentLoop agentLoop = new AgentLoop(
-                    bedrock, browser, actionLogger,
-                    config.agentMaxSteps(),
-                    effectiveGoal,
-                    config.agentNoProgressLimit())
-                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-            agentLoop.run();
-
-            System.out.println();
-            System.out.println("Landing URL: " + browser.currentUrl());
-
-            // ── Phase 3 — Table Detection ─────────────────────────────────────
-            printSeparator("Phase 3 — Table Detection");
-
-            AccountAggregator aggregator = new AccountAggregator(browser, bedrock);
-            tableResult = aggregator.detectTable();
-
-            if (tableResult == null) {
-                System.err.println("ERROR: No table found by JS or Claude. Cannot aggregate accounts.");
-                return 1;
-            }
-
-            totalUsage = totalUsage.add(aggregator.accumulatedUsage());
-            System.out.println("Table selector   : " + tableResult.selector());
-            System.out.println("Columns detected : " + tableResult.headers());
-            System.out.println("Detected by      : "
-                    + (tableResult.detectedByJs() ? "JS (no LLM cost)" : "Claude vision"));
-
-            // ── Phase 4 — Pagination Loop ─────────────────────────────────────
-            printSeparator("Phase 4 — Pagination Loop");
-
-            TokenUsage beforePhase4 = aggregator.accumulatedUsage();
-            allRows = aggregator.paginationLoop(
-                    tableResult,
-                    resolvedAnalysis.paginationPattern(),
-                    maxPages);
-            pagesScraped = aggregator.pagesScraped();
-
-            TokenUsage phase4Usage = aggregator.accumulatedUsage().add(negate(beforePhase4));
-            totalUsage = totalUsage.add(phase4Usage);
-
-            // ── Phase 5 — CSV Write ───────────────────────────────────────────
-            printSeparator("Phase 5 — CSV Write");
-
-            List<String> effectiveHeaders = resolveHeaders(tableResult.headers(), allRows);
-            System.out.printf("Writing %d total accounts to output directory: %s%n",
-                    allRows.size(), outputDir);
-
-            try {
-                outputFilePath = writeCsv(allRows, effectiveHeaders, outputDir);
-                System.out.println("Done. CSV saved.");
-            } catch (IOException e) {
-                System.err.println("ERROR: CSV write failed: " + e.getMessage());
-                System.err.println("Printing rows to console as fallback:");
-                printRowsToConsole(allRows, effectiveHeaders);
-            }
-        }
+        PipelineResult pipelineResult = AgentPipeline.run(pipelineConfig, ProgressListener.SILENT);
 
         // ── Phase 6 — Summary ─────────────────────────────────────────────────
-        List<String> summaryHeaders = tableResult != null
-                ? resolveHeaders(tableResult.headers(), allRows)
-                : List.of();
-        printSummary(pagesScraped, allRows.size(), summaryHeaders, outputFilePath, totalUsage,
+        TokenUsage grandTotal = videoUsage.add(pipelineResult.totalUsage());
+
+        printSummary(
+                pipelineResult.pagesScraped(),
+                pipelineResult.rowsScraped(),
+                pipelineResult.headers(),
+                pipelineResult.csvPath().isBlank() ? null : pipelineResult.csvPath(),
+                grandTotal,
                 parsed.plan() != null);
-        return 0;
+
+        return pipelineResult.success() ? 0 : 1;
     }
 
-    // -------------------------------------------------------------------------
-    // CSV write
-    // -------------------------------------------------------------------------
-
-    private static String writeCsv(
-            List<Map<String, String>> rows,
-            List<String> headers,
-            String outputDirStr) throws IOException {
-
-        Path outputDir = Path.of(outputDirStr);
-        Files.createDirectories(outputDir);
-
-        String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
-        Path filePath = outputDir.resolve("accounts_" + timestamp + ".csv");
-
-        try (BufferedWriter writer = Files.newBufferedWriter(filePath, StandardCharsets.UTF_8)) {
-            writer.write(headers.stream()
-                    .map(AggregationRunner::csvEscape)
-                    .collect(Collectors.joining(",")));
-            writer.newLine();
-
-            for (Map<String, String> row : rows) {
-                writer.write(headers.stream()
-                        .map(h -> csvEscape(row.getOrDefault(h, "")))
-                        .collect(Collectors.joining(",")));
-                writer.newLine();
-            }
-        }
-
-        return filePath.toAbsolutePath().toString();
-    }
-
-    private static String csvEscape(String value) {
-        if (value == null) return "";
-        String v = value.trim();
-        if (v.contains(",") || v.contains("\"") || v.contains("\n") || v.contains("\r")) {
-            return "\"" + v.replace("\"", "\"\"") + "\"";
-        }
-        return v;
-    }
-
-    // -------------------------------------------------------------------------
-    // Summary
-    // -------------------------------------------------------------------------
+    // ── Summary ───────────────────────────────────────────────────────────────
 
     private static void printSummary(
             int pages, int total, List<String> columns,
@@ -324,7 +202,7 @@ public final class AggregationRunner {
         System.out.printf("Pages scraped    : %d%n", pages);
         System.out.printf("Total accounts   : %d%n", total);
         System.out.printf("Columns          : %s%n",
-                columns.isEmpty() ? "(none detected)" : String.join(", ", columns));
+                (columns == null || columns.isEmpty()) ? "(none detected)" : String.join(", ", columns));
         System.out.printf("Output file      : %s%n",
                 outputFile != null ? outputFile : "(CSV write failed — see console above)");
         System.out.printf("Token usage*     : input=%d ($%.6f) | output=%d ($%.6f) | total=$%.6f%n",
@@ -336,34 +214,11 @@ public final class AggregationRunner {
         } else {
             System.out.println("  * Covers Phase 1 (video) + Phase 3/4 (aggregation).");
         }
-        System.out.println("    Navigation phase (AgentLoop) tokens are printed above.");
+        System.out.println("    Navigation phase (AgentLoop) tokens printed above by pipeline.");
         System.out.println(sep);
     }
 
-    // -------------------------------------------------------------------------
-    // Utilities
-    // -------------------------------------------------------------------------
-
-    private static List<String> resolveHeaders(
-            List<String> detectedHeaders, List<Map<String, String>> rows) {
-        if (detectedHeaders != null && !detectedHeaders.isEmpty()) return detectedHeaders;
-        if (!rows.isEmpty()) return new ArrayList<>(rows.get(0).keySet());
-        return List.of();
-    }
-
-    private static void printRowsToConsole(List<Map<String, String>> rows, List<String> headers) {
-        System.out.println(String.join(",", headers));
-        for (Map<String, String> row : rows) {
-            System.out.println(headers.stream()
-                    .map(h -> csvEscape(row.getOrDefault(h, "")))
-                    .collect(Collectors.joining(",")));
-        }
-    }
-
-    private static TokenUsage negate(TokenUsage u) {
-        return new TokenUsage(-u.inputTokens(), -u.outputTokens(),
-                -u.inputCostUsd(), -u.outputCostUsd());
-    }
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void printSeparator(String title) {
         System.out.println();
@@ -400,14 +255,12 @@ public final class AggregationRunner {
                   --goal=<text>   Navigation goal with real credentials (highly recommended)
 
                 Configuration: src/main/resources/application.properties
-                  aggregation.max.pages=50
+                  aggregation.max.pages=5
                   aggregation.output.dir=./output
                 """);
     }
 
-    // -------------------------------------------------------------------------
-    // Argument parsing
-    // -------------------------------------------------------------------------
+    // ── Argument parsing ──────────────────────────────────────────────────────
 
     private record ParsedArgs(String video, String plan, String url, String goal) {
 

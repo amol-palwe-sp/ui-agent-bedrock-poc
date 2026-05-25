@@ -7,7 +7,14 @@ import org.json.JSONObject;
  * System and user prompts for Phase 1 (video analysis) of the aggregation pipeline,
  * plus a static {@link #parse(String)} helper that converts Claude's JSON response
  * into an {@link AggregationVideoAnalysis}.
+ *
+ * @deprecated Replaced by {@link com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt} with
+ *             {@link com.sailpoint.poc.uiagent.video.VideoAnalysisRequest#aggregation(
+ *             com.sailpoint.poc.uiagent.video.VideoAnalysisRequest.CredentialMode)
+ *             VideoAnalysisRequest.aggregation(CredentialMode.LITERAL)}.
+ *             This class will be removed in a future cleanup pass.
  */
+@Deprecated(since = "refactor/unified-pipeline", forRemoval = true)
 public final class AggregationVideoPrompt {
 
     private AggregationVideoPrompt() {}

@@ -1,8 +1,13 @@
 package com.sailpoint.poc.uiagent.video;
 
 /**
- * Single source of truth for the system and user prompts used to convert
- * video frames into a goal command string. Content derived from PROMPT.md.
+ * Canonical prompts for <strong>provisioning</strong> video → goal conversion.
+ * Produces a single {@code goal} fenced block with a full
+ * {@code ./gradlew run --args='...'} line. Used by {@code runVideo}, the web UI
+ * {@code POST /api/generate}, and {@link VideoAnalysisPrompt} when
+ * {@link VideoAnalysisRequest#isProvisioning()}. Content derived from PROMPT.md.
+ *
+ * <p>Aggregation flows use {@link VideoAnalysisPrompt} JSON output instead.
  */
 public final class VideoToGoalPrompt {
 

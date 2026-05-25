@@ -1,28 +1,28 @@
 package com.sailpoint.poc.uiagent.ui;
 
-import com.sailpoint.poc.uiagent.ActionLogger;
-import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
+import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.PipelineStatus;
+import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.BlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * POST /api/run  — starts the agent in a background thread.
+ * POST /api/run  — starts the agent in a background thread via {@link AgentPipeline}.
  * POST /api/stop — interrupts the running thread (handled by {@link StopHandler}).
  *
- * <p>While the agent runs, {@link LogCapturingPrintStream} wraps {@code System.out}
- * and forwards every printed line to the SSE log queue so the browser sees live output.
+ * <p>Uses {@link ProgressListener} to receive real-time log output from the pipeline
+ * (REQ-3.5 — replaces the former {@code System.setOut()} capture hack).
  */
 public final class RunHandler implements HttpHandler {
 
@@ -30,7 +30,6 @@ public final class RunHandler implements HttpHandler {
     private static final Pattern GOAL_PATTERN = Pattern.compile("--goal=(.+?)'?\\s*$");
 
     private final AgentUIServer.ServerState state;
-    private volatile PrintStream originalOut;
 
     public RunHandler(AgentUIServer.ServerState state) {
         this.state = state;
@@ -65,17 +64,10 @@ public final class RunHandler implements HttpHandler {
         }
         String startUrl  = urlM.group(1).trim();
         String goalText  = goalM.group(1).trim();
-        // strip trailing quote if present
         if (goalText.endsWith("'")) goalText = goalText.substring(0, goalText.length() - 1).trim();
 
         state.agentRunning.set(true);
         state.logQueue.offer("STATUS:running");
-
-        // ── Capture System.out ────────────────────────────────────────────────
-        originalOut = System.out;
-        LogCapturingPrintStream capturer =
-                new LogCapturingPrintStream(originalOut, state.logQueue);
-        System.setOut(capturer);
 
         final String finalUrl  = startUrl;
         final String finalGoal = goalText;
@@ -83,47 +75,31 @@ public final class RunHandler implements HttpHandler {
         Thread agent = new Thread(() -> {
             try {
                 PocConfig config = new PocConfig();
-                try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                             config.awsRegion(), config.awsProfile(), config.bedrockModelId(),
-                             config.maxTokens(), config.temperature());
-                     BrowserSession browser = new BrowserSession(
-                             config.browserHeadless(),
-                             config.browserSlowMoMs(),
-                             config.browserViewportWidth(),
-                             config.browserViewportHeight(),
-                             config.browserStartMaximized(),
-                             config.browserFullscreenViewportWidth(),
-                             config.browserFullscreenViewportHeight(),
-                             config.actionTimeoutClickMs(),
-                             config.actionTimeoutTypeMs(),
-                             config.actionTimeoutNavigateMs(),
-                             config.interActionDelayMs());
-                     ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
 
-                    browser.navigate(finalUrl);
-                    AgentLoop loop = new AgentLoop(
-                            bedrock, browser, actionLogger,
-                            config.agentMaxSteps(), finalGoal,
-                            config.agentNoProgressLimit())
-                            .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-                    TokenUsage usage = loop.run();
-                    state.logQueue.offer("TOKEN_USAGE:" + usage.inputTokens()
-                            + ":" + usage.outputTokens()
-                            + ":" + usage.totalCostUsd());
-                }
+                // Build pipeline config — single source of truth for resource setup (REQ-3.3)
+                PipelineConfig pipelineConfig = PipelineConfig.builder()
+                        .taskType(PipelineConfig.TaskType.PROVISIONING)
+                        .startUrl(finalUrl)
+                        .goal(finalGoal)
+                        .bedrockConfig(config.bedrock())
+                        .browserConfig(config.browser())
+                        .agentConfig(config.agent())
+                        .build();
+
+                // ProgressListener forwards pipeline output to SSE queue (REQ-3.5)
+                ProgressListener listener = new QueueProgressListener(state.logQueue);
+
+                // AgentPipeline owns all resource lifecycle (REQ-3.4)
+                PipelineResult result = AgentPipeline.run(pipelineConfig, listener);
+
                 state.logQueue.offer("STATUS:ready");
-                state.logQueue.offer("DONE:0");
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                state.logQueue.offer("LOG:WARNING:Agent interrupted by user");
-                state.logQueue.offer("STATUS:ready");
-                state.logQueue.offer("DONE:1");
+                state.logQueue.offer("DONE:" + (result.success() ? "0" : "1"));
+
             } catch (Exception e) {
                 state.logQueue.offer("LOG:ERROR:" + e.getMessage());
                 state.logQueue.offer("STATUS:ready");
                 state.logQueue.offer("DONE:1");
             } finally {
-                restoreOut();
                 state.agentRunning.set(false);
             }
         }, "agent-loop");
@@ -133,13 +109,6 @@ public final class RunHandler implements HttpHandler {
         agent.start();
 
         sendJson(ex, 200, "{\"started\":true}");
-    }
-
-    private void restoreOut() {
-        if (originalOut != null) {
-            System.setOut(originalOut);
-            originalOut = null;
-        }
     }
 
     // ── StopHandler ───────────────────────────────────────────────────────────
@@ -165,51 +134,35 @@ public final class RunHandler implements HttpHandler {
         }
     }
 
-    // ── LogCapturingPrintStream ───────────────────────────────────────────────
+    // ── ProgressListener → SSE queue adapter ──────────────────────────────────
 
     /**
-     * Wraps the real {@code System.out} and forwards every printed line to the
-     * log queue with an appropriate level prefix.
+     * Bridges {@link ProgressListener} callbacks to the SSE log queue.
+     * Replaces the former {@code LogCapturingPrintStream} / {@code System.setOut()} approach.
      */
-    static final class LogCapturingPrintStream extends PrintStream {
+    static final class QueueProgressListener implements ProgressListener {
 
         private final BlockingQueue<String> queue;
 
-        LogCapturingPrintStream(PrintStream delegate, BlockingQueue<String> queue) {
-            super(delegate, true);
+        QueueProgressListener(BlockingQueue<String> queue) {
             this.queue = queue;
         }
 
         @Override
-        public void println(String x) {
-            super.println(x);
-            if (x != null) queue.offer(classify(x));
+        public void onLog(String level, String message) {
+            if (message != null) queue.offer("LOG:" + level + ":" + message);
         }
 
         @Override
-        public void println(Object x) {
-            String s = String.valueOf(x);
-            super.println(s);
-            queue.offer(classify(s));
+        public void onStatusChange(PipelineStatus status) {
+            // Translate PipelineStatus to the legacy SSE status strings the UI understands
         }
 
-        private static String classify(String line) {
-            if (line.contains("✓") || line.contains("✅") ||
-                    line.toLowerCase().contains("success")) {
-                return "LOG:SUCCESS:" + line;
-            }
-            if (line.contains("✗") || line.toUpperCase().contains("ERROR") ||
-                    line.toLowerCase().contains("failed")) {
-                return "LOG:ERROR:" + line;
-            }
-            if (line.contains("⚠") || line.toUpperCase().contains("WARNING") ||
-                    line.toLowerCase().contains("stuck")) {
-                return "LOG:WARNING:" + line;
-            }
-            if (line.contains("--- Step") || line.matches("^Step \\d+.*")) {
-                return "LOG:STEP:" + line;
-            }
-            return "LOG:INFO:" + line;
+        @Override
+        public void onTokenUsage(TokenUsage usage) {
+            queue.offer("TOKEN_USAGE:" + usage.inputTokens()
+                    + ":" + usage.outputTokens()
+                    + ":" + usage.totalCostUsd());
         }
     }
 
@@ -230,12 +183,11 @@ public final class RunHandler implements HttpHandler {
         String search = "\"" + key + "\"";
         int idx = json.indexOf(search);
         if (idx < 0) return null;
-        int colon = json.indexOf(':', idx + search.length());
+        int colon  = json.indexOf(':', idx + search.length());
         if (colon < 0) return null;
         int quote1 = json.indexOf('"', colon + 1);
         if (quote1 < 0) return null;
         int quote2 = quote1 + 1;
-        // find closing quote, honoring escapes
         while (quote2 < json.length()) {
             char c = json.charAt(quote2);
             if (c == '\\') { quote2 += 2; continue; }
@@ -244,10 +196,8 @@ public final class RunHandler implements HttpHandler {
         }
         if (quote2 >= json.length()) return null;
         return json.substring(quote1 + 1, quote2)
-                   .replace("\\\"", "\"")
-                   .replace("\\/", "/")
-                   .replace("\\n", "\n")
-                   .replace("\\r", "\r")
+                   .replace("\\\"", "\"").replace("\\/", "/")
+                   .replace("\\n",  "\n").replace("\\r",  "\r")
                    .replace("\\\\", "\\");
     }
 }

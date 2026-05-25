@@ -1,11 +1,12 @@
 package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
-import com.sailpoint.poc.uiagent.aggregation.AggregationUIAnalysis;
-import com.sailpoint.poc.uiagent.aggregation.AggregationVideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -27,8 +28,9 @@ import java.util.UUID;
  * POST /api/aggregation/generate
  *
  * <p>Accepts a multipart/form-data MP4 upload, extracts frames, invokes Claude once using
- * {@link AggregationVideoAnalysisPrompt} to produce a navigation goal with {@code {Token}}
- * placeholders AND a pagination pattern, then returns the parsed result as JSON.
+ * {@link VideoAnalysisPrompt} (AGGREGATION + PLACEHOLDER mode) to produce a navigation
+ * goal with {@code {Token}} placeholders AND a pagination pattern, then returns the
+ * parsed result as JSON.
  *
  * <p>Progress messages are pushed to {@link AggregationServerState#logQueue} so the
  * aggregation SSE stream can relay them to the browser in real time.
@@ -73,12 +75,10 @@ public final class AggregationGenerateHandler implements HttpHandler {
                 if (!item.isFormField() && "video".equals(item.getFieldName())) {
                     String name = item.getName();
                     if (name == null || !name.toLowerCase().endsWith(".mp4")) {
-                        sendJson(ex, 400, "{\"error\":\"Only MP4 supported\"}");
-                        return;
+                        sendJson(ex, 400, "{\"error\":\"Only MP4 supported\"}"); return;
                     }
                     if (item.getSize() > MAX_UPLOAD_BYTES) {
-                        sendJson(ex, 400, "{\"error\":\"File exceeds 500MB\"}");
-                        return;
+                        sendJson(ex, 400, "{\"error\":\"File exceeds 500MB\"}"); return;
                     }
                     videoBytes = item.get();
                 } else if (item.isFormField()) {
@@ -93,8 +93,7 @@ public final class AggregationGenerateHandler implements HttpHandler {
             }
 
             if (videoBytes == null || videoBytes.length == 0) {
-                sendJson(ex, 400, "{\"error\":\"No video file received\"}");
-                return;
+                sendJson(ex, 400, "{\"error\":\"No video file received\"}"); return;
             }
 
             tempFile = Files.createTempFile("uiagent-aggr-" + UUID.randomUUID(), ".mp4");
@@ -104,17 +103,11 @@ public final class AggregationGenerateHandler implements HttpHandler {
             push("LOG:INFO:Extracting frames from video...");
 
             PocConfig config = new PocConfig();
-            int effectiveMaxFrames  = maxFrames != null ? maxFrames
-                    : Integer.parseInt(config.optional("video.max.frames", "80"));
-            double changeThreshold  = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
-            double minGapSeconds    = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
-            double maxForcedGapSecs = Double.parseDouble(config.optional("video.max.forced.gap.seconds", "3.0"));
-            int    frameMaxWidth    = Integer.parseInt(config.optional("video.frame.max.width", "1280"));
-            int    jpegQuality      = Integer.parseInt(config.optional("video.jpeg.quality", "75"));
+            int effectiveMaxFrames = maxFrames != null ? maxFrames : config.video().maxFrames();
 
             VideoFrameExtractor extractor = new VideoFrameExtractor(
-                    effectiveMaxFrames, changeThreshold, minGapSeconds, maxForcedGapSecs,
-                    frameMaxWidth, jpegQuality, null);
+                    config.video().withMaxFrames(effectiveMaxFrames));
+
             List<byte[]> frames = extractor.extractFrames(tempFile.toString());
 
             if (frames.isEmpty()) {
@@ -128,44 +121,41 @@ public final class AggregationGenerateHandler implements HttpHandler {
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
             push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
 
-            String userPrompt = (overrideUrl != null && !overrideUrl.isBlank())
-                    ? AggregationVideoAnalysisPrompt.userPromptWithUrl(overrideUrl)
-                    : AggregationVideoAnalysisPrompt.USER_PROMPT;
+            // AGGREGATION + PLACEHOLDER: {Token} substitution so UI can collect credentials
+            VideoAnalysisRequest request = overrideUrl != null && !overrideUrl.isBlank()
+                    ? VideoAnalysisRequest.aggregation(
+                            VideoAnalysisRequest.CredentialMode.PLACEHOLDER, overrideUrl)
+                    : VideoAnalysisRequest.aggregation(
+                            VideoAnalysisRequest.CredentialMode.PLACEHOLDER);
+            VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
             InvokeResult result;
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
-                    config.awsRegion(),
-                    config.awsProfile(),
-                    config.bedrockModelId(),
-                    config.maxTokens(),
-                    config.temperature())) {
+                    config.bedrock().region(), config.bedrock().profile(),
+                    config.bedrock().modelId(), config.bedrock().maxTokens(),
+                    config.bedrock().temperature())) {
                 result = client.invokeWithMultipleImages(
-                        AggregationVideoAnalysisPrompt.SYSTEM_PROMPT, userPrompt, frames);
+                        prompts.systemPrompt(), prompts.userPrompt(), frames);
             }
 
             push("LOG:SUCCESS:Claude responded — parsing navigation goal and pagination pattern...");
 
-            AggregationUIAnalysis analysis;
-            List<String> issues;
-            boolean isValid;
-            try {
-                analysis = AggregationVideoAnalysisPrompt.parse(result.text());
-                issues   = List.of();
-                isValid  = true;
-            } catch (IllegalArgumentException e) {
-                push("LOG:ERROR:Parse failed: " + e.getMessage());
+            VideoAnalysisResult analysis = VideoAnalysisResult.parse(result.text(), request);
+
+            if (!analysis.isValid()) {
+                push("LOG:ERROR:Parse failed: " + analysis.issues());
                 push("STATUS:ready");
-                String escaped = e.getMessage() == null ? "Parse error"
-                        : e.getMessage().replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+                String escaped = String.join("; ", analysis.issues())
+                        .replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
                 sendJson(ex, 500, "{\"error\":\"" + escaped + "\"}");
                 return;
             }
 
-            List<String> steps = parseSteps(analysis.navigationGoal());
+            List<String> steps = analysis.steps();
             push("LOG:INFO:Extracted " + steps.size() + " navigation step(s)");
             push("STATUS:ready");
 
-            String json = buildResultJson(analysis, steps, result, frames.size(), isValid, issues);
+            String json = buildResultJson(analysis, steps, result, frames.size());
             sendJson(ex, 200, json);
 
         } catch (Exception e) {
@@ -187,27 +177,19 @@ public final class AggregationGenerateHandler implements HttpHandler {
         state.logQueue.offer(msg);
     }
 
-    /** Splits a navigation goal on {@code ", then "} to produce individual step strings. */
-    private static List<String> parseSteps(String navigationGoal) {
-        if (navigationGoal == null || navigationGoal.isBlank()) return List.of();
-        return Arrays.stream(navigationGoal.split(",\\s*then\\s+"))
-                .map(String::trim)
-                .filter(s -> !s.isBlank())
-                .toList();
-    }
-
     private static String buildResultJson(
-            AggregationUIAnalysis analysis,
+            VideoAnalysisResult analysis,
             List<String> steps,
             InvokeResult result,
-            int frameCount,
-            boolean isValid,
-            List<String> issues) {
+            int frameCount) {
 
-        PaginationPattern pp = analysis.paginationPattern();
+        PaginationPattern pp = analysis.paginationPattern() != null
+                ? analysis.paginationPattern()
+                : new PaginationPattern("unknown", "", "");
 
         StringBuilder sb = new StringBuilder("{");
         sb.append("\"url\":").append(quoted(analysis.targetUrl()));
+        sb.append(",\"targetUrl\":").append(quoted(analysis.targetUrl()));
         sb.append(",\"navigationGoal\":").append(quoted(analysis.navigationGoal()));
         sb.append(",\"steps\":[");
         for (int i = 0; i < steps.size(); i++) {
@@ -215,13 +197,24 @@ public final class AggregationGenerateHandler implements HttpHandler {
             sb.append(quoted(steps.get(i)));
         }
         sb.append("]");
+        // Token definitions (new — REQ-1.2)
+        sb.append(",\"tokens\":[");
+        for (int i = 0; i < analysis.tokens().size(); i++) {
+            if (i > 0) sb.append(",");
+            var t = analysis.tokens().get(i);
+            sb.append("{\"name\":").append(quoted(t.name()))
+              .append(",\"label\":").append(quoted(t.label()))
+              .append(",\"type\":").append(quoted(t.type())).append("}");
+        }
+        sb.append("]");
         sb.append(",\"paginationPattern\":{");
         sb.append("\"type\":").append(quoted(pp.type()));
         sb.append(",\"description\":").append(quoted(pp.description()));
         sb.append(",\"selectorHint\":").append(quoted(pp.selectorHint()));
         sb.append("}");
-        sb.append(",\"isValid\":").append(isValid);
+        sb.append(",\"isValid\":").append(analysis.isValid());
         sb.append(",\"issues\":[");
+        List<String> issues = analysis.issues();
         for (int i = 0; i < issues.size(); i++) {
             if (i > 0) sb.append(",");
             sb.append(quoted(issues.get(i)));
@@ -240,17 +233,13 @@ public final class AggregationGenerateHandler implements HttpHandler {
         ex.getResponseHeaders().set("Content-Type", "application/json");
         ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
         ex.sendResponseHeaders(code, body.length);
-        try (OutputStream out = ex.getResponseBody()) {
-            out.write(body);
-        }
+        try (OutputStream out = ex.getResponseBody()) { out.write(body); }
     }
 
     private static String quoted(String s) {
         if (s == null) return "null";
-        return "\"" + s.replace("\\", "\\\\")
-                       .replace("\"", "\\\"")
-                       .replace("\n", "\\n")
-                       .replace("\r", "\\r") + "\"";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+                       .replace("\n", "\\n").replace("\r", "\\r") + "\"";
     }
 
     // ── Commons FileUpload adapter ────────────────────────────────────────────

@@ -171,7 +171,7 @@ Properties in `application.properties` still apply for defaults (threshold, gap,
 
 ### What the UI does (conceptually)
 
-- **Upload video → generate goal** — Browser sends **multipart/form-data** to `POST /api/generate` (`video` file + optional `url`, `maxFrames`). Server writes a temp MP4, runs `VideoFrameExtractor` → Bedrock → `GoalExtractor`, returns JSON (`goalLine`, `url`, `steps`, token usage, cost fields, etc.). Progress lines are also pushed to the shared log queue for the stream.
+- **Upload video → generate goal** — Browser sends **multipart/form-data** to `POST /api/generate` (`video` file + optional `url`, `maxFrames`). Server writes a temp MP4, runs `VideoFrameExtractor` → `VideoToGoalPrompt` → Bedrock → `GoalExtractor`, returns JSON (`goalLine`, `url`, `steps`, `isValid`, `issues`, token usage, etc.). Progress lines are also pushed to the shared log queue for the stream.
 - **Run agent** — Client sends `POST /api/run` with JSON body containing **`goalLine`**: a single string that must include **`--url=...`** and **`--goal=...`** (same shape as a CLI command snippet). The server parses URL and goal, starts **one** background agent thread; only one run at a time (`409` if already running).
 - **Live logs** — `GET /api/stream` is **Server-Sent Events**: JSON `data:` lines for logs, status, progress, done.
 - **Stop** — `POST /api/stop` interrupts the agent thread.
@@ -201,27 +201,126 @@ The model returns structured actions consumed by `AgentLoop` / `BrowserSession`,
 
 ---
 
-## Project layout (high level)
+## Architecture — Unified Pipeline & Video Analysis
+
+All five previous setup duplication points (UiAgentPocApplication, AggregationRunner, AggregationPlanRunner, RunHandler, AggregationRunHandler) now delegate to two unified subsystems.
+
+### AgentPipeline — single resource owner
+
+```
+PipelineConfig.builder()
+    .taskType(PROVISIONING | AGGREGATION)
+    .startUrl(...)  .goal(...)  .tokenValues(...)
+    .bedrockConfig(config.bedrock())
+    .browserConfig(config.browser())
+    .agentConfig(config.agent())
+    // AGGREGATION only:
+    .paginationPattern(...)  .aggregationConfig(config.aggregation())
+    .build()
+
+AgentPipeline.run(config, progressListener)
+    → creates BedrockAnthropicClient + BrowserSession + ActionLogger
+    → navigate → AgentLoop
+    → [AGGREGATION] detectTable → paginationLoop → writeCsv
+    → closes all resources in finally
+    → returns PipelineResult
+```
+
+`ProgressListener.SILENT` — for CLI callers that read `System.out` directly.
+`QueueProgressListener` — used by web handlers to forward output to SSE.
+
+### VideoAnalysisPrompt — single parameterized prompt
+
+```
+VideoAnalysisRequest request = VideoAnalysisRequest.aggregation(
+        CredentialMode.PLACEHOLDER, "https://...");
+
+VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
+InvokeResult r = bedrock.invokeWithMultipleImages(
+        prompts.systemPrompt(), prompts.userPrompt(), frames);
+
+VideoAnalysisResult result = VideoAnalysisResult.parse(r.text(), request);
+// result.targetUrl(), .navigationGoal(), .tokens(), .paginationPattern()
+```
+
+Task type × Credential mode combinations:
+
+| Call | Old class | New request |
+|------|-----------|-------------|
+| Provisioning (CLI + web `/api/generate`) | `VideoToGoalPrompt` + `GoalExtractor` | `VideoAnalysisPrompt.build()` delegates for provisioning |
+| Aggregation CLI | `AggregationVideoPrompt` _(deprecated)_ | `VideoAnalysisRequest.aggregation(LITERAL)` |
+| Aggregation UI | `AggregationVideoAnalysisPrompt` _(deprecated)_ | `VideoAnalysisRequest.aggregation(PLACEHOLDER)` |
+
+### Config sub-records
+
+`PocConfig` retains all existing methods for backward compat and now also exposes typed sub-records:
+
+```java
+config.bedrock()      // BedrockConfig(region, profile, modelId, maxTokens, temperature)
+config.browser()      // BrowserConfig(headless, slowMoMs, viewports, timeouts, delay)
+config.agent()        // AgentConfig(maxSteps, logFile, noProgressLimit, multiViewportMaxFrames)
+config.video()        // VideoConfig(maxFrames, threshold, gaps, frameMaxWidth, jpegQuality, debugDir)
+config.aggregation()  // AggregationConfig(maxPages, outputDir)
+```
+
+### Project layout (high level)
 
 ```
 ui-agent-bedrock-poc/
-├── build.gradle                 # Dependencies + run, runUI, runVideo
-├── settings.gradle
-├── README.md                    # Original concise README (unchanged)
-├── README-NEW.md                # This file
+├── build.gradle                 # Dependencies + run, runUI, runVideo, runAggregation tasks
+├── README.md                    # Concise README + action table
+├── README-NEW.md                # This file (full architecture guide)
 └── src/main/
     ├── java/com/sailpoint/poc/uiagent/
-    │   ├── UiAgentPocApplication.java   # CLI agent entry
-    │   ├── AgentLoop.java                 # Observe → Plan → Act
-    │   ├── PocConfig.java                 # Properties loader
-    │   ├── BedrockModelHints.java         # Inference profile heuristics
-    │   ├── bedrock/BedrockAnthropicClient.java
-    │   ├── browser/BrowserSession.java
-    │   ├── video/                         # VideoToGoalRunner, extractor, prompts, goal extraction
-    │   └── ui/                            # AgentUIServer, handlers, SSE
+    │   ├── UiAgentPocApplication.java    # CLI agent entry (uses AgentPipeline)
+    │   ├── AgentLoop.java                # Observe → Plan → Act (internal, unchanged)
+    │   ├── PocConfig.java                # Properties loader + sub-config facade
+    │   ├── BedrockModelHints.java        # Inference profile routing heuristics
+    │   │
+    │   ├── config/                       # Typed config sub-records (REQ-5)
+    │   │   ├── BedrockConfig.java
+    │   │   ├── BrowserConfig.java
+    │   │   ├── AgentConfig.java
+    │   │   ├── VideoConfig.java
+    │   │   └── AggregationConfig.java
+    │   │
+    │   ├── pipeline/                     # Unified pipeline (REQ-3)
+    │   │   ├── AgentPipeline.java        # Single runner — owns all resources
+    │   │   ├── PipelineConfig.java       # All pipeline params in one builder
+    │   │   ├── PipelineResult.java       # Unified result record
+    │   │   ├── PipelineStatus.java       # Lifecycle enum
+    │   │   └── ProgressListener.java     # Callback interface (replaces System.setOut hacks)
+    │   │
+    │   ├── video/                        # Unified video analysis (REQ-1 / REQ-2)
+    │   │   ├── VideoFrameExtractor.java  # OpenCV keyframe extraction
+    │   │   ├── VideoAnalysisPrompt.java  # Parameterized prompt builder (replaces 3 classes)
+    │   │   ├── VideoAnalysisRequest.java # Prompt parameters
+    │   │   ├── VideoAnalysisResult.java  # Unified Claude response parser (replaces 3 classes)
+    │   │   ├── TokenDefinition.java      # {Token} placeholder metadata
+    │   │   ├── VideoToGoalRunner.java    # CLI: runVideo task (unchanged interface)
+    │   │   ├── VideoToGoalPrompt.java    # Provisioning prompts (```goal block)
+    │   │   └── GoalExtractor.java        # @Deprecated
+    │   │
+    │   ├── aggregation/
+    │   │   ├── AggregationRunner.java    # CLI: runAggregation (uses AgentPipeline)
+    │   │   ├── AggregationPlanRunner.java# CLI: runAggregationPlan (uses AgentPipeline)
+    │   │   ├── AccountAggregator.java    # Table detection + pagination (unchanged)
+    │   │   ├── PaginationPattern.java    # Data record (unchanged)
+    │   │   ├── AggregationPlan.java      # Plan JSON save/load (unchanged)
+    │   │   ├── AggregationVideoPrompt.java          # @Deprecated
+    │   │   └── AggregationVideoAnalysisPrompt.java  # @Deprecated
+    │   │
+    │   ├── bedrock/BedrockAnthropicClient.java  # Bedrock InvokeModel + vision (unchanged)
+    │   ├── browser/BrowserSession.java           # Playwright scrape + actions (unchanged)
+    │   └── ui/
+    │       ├── AgentUIServer.java           # HTTP server entry point (unchanged)
+    │       ├── RunHandler.java              # /api/run (uses AgentPipeline + ProgressListener)
+    │       ├── AggregationRunHandler.java   # /api/aggregation/run (uses AgentPipeline)
+    │       ├── GenerateHandler.java         # /api/generate (VideoToGoalPrompt + GoalExtractor)
+    │       └── AggregationGenerateHandler.java  # /api/aggregation/generate (unified)
     └── resources/
         ├── application.properties
-        └── ui/                            # index.html, style.css, app.js, images
+        └── ui/                            # index.html, style.css, app.js, aggregation.*
 ```
 
 ---
@@ -252,4 +351,4 @@ ui-agent-bedrock-poc/
 ## Further reading
 
 - **`README.md`** — Diagram of the observe/plan/act loop, action table, and extra command examples.
-- **Usage in code** — `UiAgentPocApplication.printUsage()`, `VideoToGoalRunner` stderr usage text, and `AgentUIServer` for port and routes.
+- **Usage in code** — `UiAgentPocApplication.printUsage()`, `VideoToGoalRunner` stderr usage text, `AgentUIServer` for port and routes, and `AgentPipeline.run()` Javadoc for the unified pipeline API.

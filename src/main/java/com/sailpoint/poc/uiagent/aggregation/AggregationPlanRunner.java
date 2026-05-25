@@ -1,12 +1,16 @@
 package com.sailpoint.poc.uiagent.aggregation;
 
-import com.sailpoint.poc.uiagent.ActionLogger;
-import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
-import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
+import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 
 import java.io.File;
@@ -18,9 +22,10 @@ import java.util.List;
  * <p>This runner:
  * <ol>
  *   <li>Extracts frames from the MP4 video.</li>
- *   <li>Calls Claude to get the {@code navigationGoal} + {@code paginationPattern}.</li>
- *   <li>Navigates to {@code --url} and runs {@code AgentLoop} with the extracted goal
- *       so the browser lands on the user list page.</li>
+ *   <li>Calls Claude via {@link VideoAnalysisPrompt} to get the
+ *       {@code navigationGoal} + {@code paginationPattern}.</li>
+ *   <li>Uses {@link AgentPipeline} (PROVISIONING mode) to navigate to {@code --url}
+ *       and run AgentLoop so the browser lands on the user list page.</li>
  *   <li>Saves an {@link AggregationPlan} JSON file to {@code ./output/}.</li>
  *   <li>Prints the next command to run (Step 2).</li>
  * </ol>
@@ -35,7 +40,8 @@ import java.util.List;
  *   ./gradlew runAggregation \
  *     --args='--plan=./output/aggregation-plan_&lt;timestamp&gt;.json \
  *             --url=https://admin.google.com/ac/users \
- *             --goal=enter "user@example.com" in Email, then click Next, then enter "password" in password field, then click Next'
+ *             --goal=enter "user@example.com" in Email, then click Next,
+ *                    then enter "password" in password field, then click Next'
  * </pre>
  */
 public final class AggregationPlanRunner {
@@ -69,14 +75,7 @@ public final class AggregationPlanRunner {
         // ── Phase 1 — Video Analysis ─────────────────────────────────────────
         printSeparator("Step 1 / Phase 1 — Video Analysis");
 
-        VideoFrameExtractor extractor = new VideoFrameExtractor(
-                config.videoMaxFrames(),
-                config.videoChangeThreshold(),
-                config.videoMinGapSeconds(),
-                config.videoMaxForcedGapSeconds(),
-                config.videoFrameMaxWidth(),
-                config.videoJpegQuality(),
-                config.videoDebugFramesDir());
+        VideoFrameExtractor extractor = new VideoFrameExtractor(config.video());
 
         System.out.println("Extracting frames from: " + videoFile.getAbsolutePath());
         List<byte[]> frames = extractor.extractFrames(parsed.video());
@@ -87,99 +86,103 @@ public final class AggregationPlanRunner {
             return 1;
         }
 
-        TokenUsage totalUsage = TokenUsage.ZERO;
+        // Video analysis uses a short-lived Bedrock client (separate from the pipeline's).
+        // The pipeline creates its own client internally (REQ-3.4).
+        TokenUsage videoUsage = TokenUsage.ZERO;
         AggregationVideoAnalysis videoAnalysis;
 
-        try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                        config.awsRegion(),
-                        config.awsProfile(),
-                        config.bedrockModelId(),
-                        config.maxTokens(),
-                        config.temperature());
-                BrowserSession browser = new BrowserSession(
-                        config.browserHeadless(),
-                        config.browserSlowMoMs(),
-                        config.browserViewportWidth(),
-                        config.browserViewportHeight(),
-                        config.browserStartMaximized(),
-                        config.browserFullscreenViewportWidth(),
-                        config.browserFullscreenViewportHeight(),
-                        config.actionTimeoutClickMs(),
-                        config.actionTimeoutTypeMs(),
-                        config.actionTimeoutNavigateMs(),
-                        config.interActionDelayMs());
-                ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
+        VideoAnalysisRequest request = VideoAnalysisRequest.aggregation(
+                VideoAnalysisRequest.CredentialMode.LITERAL, parsed.url());
+        VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
-            System.out.println("Calling Claude for video analysis (model: " + config.bedrockModelId() + ")...");
-            String userPrompt = AggregationVideoPrompt.userPromptWithUrl(parsed.url());
-            InvokeResult videoResult = bedrock.invokeWithMultipleImages(
-                    AggregationVideoPrompt.SYSTEM_PROMPT, userPrompt, frames);
-            totalUsage = totalUsage.add(videoResult.usage());
-            System.out.println("Video analysis tokens: " + videoResult.usage());
+        System.out.println("Calling Claude for video analysis (model: "
+                + config.bedrockModelId() + ")...");
 
-            try {
-                videoAnalysis = AggregationVideoPrompt.parse(videoResult.text());
-            } catch (IllegalArgumentException e) {
-                System.err.println("ERROR: " + e.getMessage());
+        try (BedrockAnthropicClient bedrockForVideo = new BedrockAnthropicClient(
+                config.bedrock().region(), config.bedrock().profile(),
+                config.bedrock().modelId(), config.bedrock().maxTokens(),
+                config.bedrock().temperature())) {
+
+            InvokeResult videoResult = bedrockForVideo.invokeWithMultipleImages(
+                    prompts.systemPrompt(), prompts.userPrompt(), frames);
+            videoUsage = videoResult.usage();
+            System.out.println("Video analysis tokens: " + videoUsage);
+
+            VideoAnalysisResult parsed2 = VideoAnalysisResult.parse(videoResult.text(), request);
+            if (!parsed2.isValid()) {
+                System.err.println("ERROR: Video analysis failed — " + parsed2.issues());
                 return 1;
             }
-
-            System.out.println();
-            System.out.println("═══ Extracted Plan ═══════════════════════════════════");
-            System.out.println("Navigation goal  : " + videoAnalysis.navigationGoal());
-            System.out.println("Pagination type  : " + videoAnalysis.paginationPattern().type());
-            System.out.println("Description      : " + videoAnalysis.paginationPattern().description());
-            System.out.println("Selector hint    : " + videoAnalysis.paginationPattern().selectorHint());
-            System.out.println("══════════════════════════════════════════════════════");
-
-            // ── Phase 2 — Navigate to user list page ─────────────────────────
-            printSeparator("Step 1 / Phase 2 — Navigate to User List Page");
-
-            System.out.println("Navigating to: " + parsed.url());
-            browser.navigate(parsed.url());
-            System.out.println("Current URL: " + browser.currentUrl());
-            System.out.println();
-            System.out.println("Running AgentLoop with extracted navigation goal...");
-            System.out.println("(Using goal from video — for real credentials use --goal in Step 2)");
-            System.out.println();
-
-            AgentLoop agentLoop = new AgentLoop(
-                    bedrock,
-                    browser,
-                    actionLogger,
-                    config.agentMaxSteps(),
-                    videoAnalysis.navigationGoal(),
-                    config.agentNoProgressLimit())
-                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-            agentLoop.run();
-
-            System.out.println();
-            System.out.println("Landing URL: " + browser.currentUrl());
-
-            // ── Save Plan File ────────────────────────────────────────────────
-            printSeparator("Step 1 — Saving Plan");
-
-            AggregationPlan plan = AggregationPlan.from(parsed.url(), videoAnalysis);
-            plan.save(config.aggregationOutputDir());
-
-            // ── Print Step 2 command ──────────────────────────────────────────
-            System.out.println();
-            System.out.println("════════════════════════════════════════════════════");
-            System.out.println("STEP 1 COMPLETE — Review browser, then run Step 2:");
-            System.out.println("════════════════════════════════════════════════════");
-            System.out.println();
-            System.out.println("./gradlew runAggregation \\");
-            System.out.println("  --args='--plan=<path-above> \\");
-            System.out.println("          --url=" + parsed.url() + " \\");
-            System.out.println("          --goal=enter \"YOUR_EMAIL\" in the Email field, then click Next, then enter \"YOUR_PASSWORD\" in the password field, then click Next'");
-            System.out.println();
-            System.out.println("Replace <path-above> with the plan path printed above.");
-            System.out.println("Replace YOUR_EMAIL and YOUR_PASSWORD with real credentials.");
-            System.out.println();
-            System.out.printf("Token usage (Step 1): %s%n", totalUsage);
+            // Convert to legacy type for AggregationPlan.from() compatibility
+            videoAnalysis = parsed2.toAggregationVideoAnalysis();
         }
 
-        return 0;
+        System.out.println();
+        System.out.println("═══ Extracted Plan ═══════════════════════════════════");
+        System.out.println("Navigation goal  : " + videoAnalysis.navigationGoal());
+        System.out.println("Pagination type  : " + videoAnalysis.paginationPattern().type());
+        System.out.println("Description      : " + videoAnalysis.paginationPattern().description());
+        System.out.println("Selector hint    : " + videoAnalysis.paginationPattern().selectorHint());
+        System.out.println("══════════════════════════════════════════════════════");
+
+        // ── Phase 2 — Navigate to User List Page via AgentPipeline ────────────
+        printSeparator("Step 1 / Phase 2 — Navigate to User List Page");
+
+        System.out.println("Navigating to: " + parsed.url());
+        System.out.println("Running AgentLoop with extracted navigation goal...");
+        System.out.println("(Using goal from video — for real credentials use --goal in Step 2)");
+        System.out.println();
+
+        // PROVISIONING mode: navigate + agent loop only, no table scraping (REQ-3.2)
+        PipelineConfig pipelineConfig = PipelineConfig.builder()
+                .taskType(PipelineConfig.TaskType.PROVISIONING)
+                .startUrl(parsed.url())
+                .goal(videoAnalysis.navigationGoal())
+                .bedrockConfig(config.bedrock())
+                .browserConfig(config.browser())
+                .agentConfig(config.agent())
+                .build();
+
+        // AgentPipeline owns all resource lifecycle (REQ-3.4)
+        PipelineResult pipelineResult = AgentPipeline.run(pipelineConfig, ProgressListener.SILENT);
+
+        System.out.println();
+        System.out.println("Landing URL: " + pipelineResult.finalUrl());
+
+        if (!pipelineResult.success()) {
+            System.err.println("WARNING: Navigation pipeline ended with: "
+                    + pipelineResult.exitReason()
+                    + (pipelineResult.errorMessage().isBlank()
+                            ? "" : " — " + pipelineResult.errorMessage()));
+            System.err.println("Plan will be saved anyway — verify the landing URL above.");
+        }
+
+        // ── Save Plan File ────────────────────────────────────────────────────
+        printSeparator("Step 1 — Saving Plan");
+
+        AggregationPlan plan = AggregationPlan.from(parsed.url(), videoAnalysis);
+        plan.save(config.aggregationOutputDir());
+
+        // ── Print Step 2 command ──────────────────────────────────────────────
+        System.out.println();
+        System.out.println("════════════════════════════════════════════════════");
+        System.out.println("STEP 1 COMPLETE — Review browser, then run Step 2:");
+        System.out.println("════════════════════════════════════════════════════");
+        System.out.println();
+        System.out.println("./gradlew runAggregation \\");
+        System.out.println("  --args='--plan=<path-above> \\");
+        System.out.println("          --url=" + parsed.url() + " \\");
+        System.out.println("          --goal=enter \"YOUR_EMAIL\" in the Email field, then click Next, "
+                + "then enter \"YOUR_PASSWORD\" in the password field, then click Next'");
+        System.out.println();
+        System.out.println("Replace <path-above> with the plan path printed above.");
+        System.out.println("Replace YOUR_EMAIL and YOUR_PASSWORD with real credentials.");
+        System.out.println();
+
+        TokenUsage grandTotal = videoUsage.add(pipelineResult.totalUsage());
+        System.out.printf("Total token usage (Step 1): %s%n", grandTotal);
+
+        return pipelineResult.success() ? 0 : 1;
     }
 
     private static void printSeparator(String title) {

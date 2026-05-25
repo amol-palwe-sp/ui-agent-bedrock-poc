@@ -94,18 +94,59 @@ On first run Gradle downloads dependencies and Playwright downloads Chromium.
 ```
 ui-agent-bedrock-poc/
 ├── build.gradle                          # Standalone Gradle project
-├── settings.gradle
 ├── src/main/
 │   ├── java/com/sailpoint/poc/uiagent/
-│   │   ├── UiAgentPocApplication.java    # Entry point + CLI parsing
-│   │   ├── AgentLoop.java                # Observe → Plan → Act loop
-│   │   ├── PocConfig.java                # application.properties reader
-│   │   ├── JsonUtil.java                 # JSON extraction helpers
+│   │   ├── UiAgentPocApplication.java    # Entry point + CLI parsing (uses AgentPipeline)
+│   │   ├── AgentLoop.java                # Observe → Plan → Act loop (internal)
+│   │   ├── PocConfig.java                # application.properties reader (facade)
 │   │   ├── BedrockModelHints.java        # Model-id routing heuristics
+│   │   │
+│   │   ├── config/                       # REQ-5: Typed config sub-records
+│   │   │   ├── BedrockConfig.java        # AWS / LLM parameters
+│   │   │   ├── BrowserConfig.java        # Playwright / browser parameters
+│   │   │   ├── AgentConfig.java          # Agent-loop parameters
+│   │   │   ├── VideoConfig.java          # Frame extraction parameters
+│   │   │   └── AggregationConfig.java    # Aggregation output parameters
+│   │   │
+│   │   ├── pipeline/                     # REQ-3: Unified pipeline
+│   │   │   ├── AgentPipeline.java        # Single entry point — owns all resources
+│   │   │   ├── PipelineConfig.java       # All params in one builder
+│   │   │   ├── PipelineResult.java       # Unified result (PROVISIONING + AGGREGATION)
+│   │   │   ├── PipelineStatus.java       # Lifecycle enum
+│   │   │   └── ProgressListener.java     # Callback — replaces System.setOut() hacks
+│   │   │
+│   │   ├── video/                        # REQ-1/2: Unified video analysis
+│   │   │   ├── VideoFrameExtractor.java  # Orchestrator (grid + patterns + selection)
+│   │   │   ├── grid/                     # GridDiffCalculator, ZoneWeightMap
+│   │   │   ├── pattern/                  # Navigation, typing, animation, scroll, …
+│   │   │   ├── scoring/                  # ScoredFrame, FrameScorer
+│   │   │   ├── selection/                # FrameSelector, ExtractionSummary  # OpenCV keyframe extraction
+│   │   │   ├── VideoAnalysisPrompt.java  # Unified parameterized prompt builder
+│   │   │   ├── VideoAnalysisRequest.java # Prompt parameters (task type, mode, URL)
+│   │   │   ├── VideoAnalysisResult.java  # Unified parsed result from Claude
+│   │   │   ├── TokenDefinition.java      # {Token} placeholder metadata
+│   │   │   ├── VideoToGoalPrompt.java    # Provisioning video → ```goal gradle line
+│   │   │   └── GoalExtractor.java        # Parses ```goal block (provisioning)
+│   │   │
+│   │   ├── aggregation/
+│   │   │   ├── AggregationRunner.java    # Step 2 CLI (uses AgentPipeline)
+│   │   │   ├── AggregationPlanRunner.java# Step 1 CLI (uses AgentPipeline)
+│   │   │   ├── AccountAggregator.java    # Table detection + pagination (unchanged)
+│   │   │   ├── PaginationPattern.java    # Data record (unchanged)
+│   │   │   ├── AggregationPlan.java      # Plan JSON serialization (unchanged)
+│   │   │   ├── AggregationVideoPrompt.java        # @Deprecated → use VideoAnalysisPrompt
+│   │   │   └── AggregationVideoAnalysisPrompt.java# @Deprecated → use VideoAnalysisPrompt
+│   │   │
 │   │   ├── bedrock/
-│   │   │   └── BedrockAnthropicClient.java  # Bedrock InvokeModel + vision
-│   │   └── browser/
-│   │       └── BrowserSession.java       # Playwright: scrape + actions
+│   │   │   └── BedrockAnthropicClient.java  # Bedrock InvokeModel + vision (unchanged)
+│   │   ├── browser/
+│   │   │   └── BrowserSession.java       # Playwright: scrape + actions (unchanged)
+│   │   └── ui/
+│   │       ├── AgentUIServer.java        # HTTP server entry point (unchanged)
+│   │       ├── RunHandler.java           # /api/run (uses AgentPipeline + ProgressListener)
+│   │       ├── AggregationRunHandler.java# /api/aggregation/run (uses AgentPipeline)
+│   │       ├── GenerateHandler.java      # /api/generate (VideoToGoalPrompt + GoalExtractor)
+│   │       └── AggregationGenerateHandler.java # /api/aggregation/generate (unified)
 │   └── resources/
 │       └── application.properties        # Local config (not committed with real creds)
 └── README.md

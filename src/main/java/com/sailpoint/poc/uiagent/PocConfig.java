@@ -1,5 +1,11 @@
 package com.sailpoint.poc.uiagent;
 
+import com.sailpoint.poc.uiagent.config.AgentConfig;
+import com.sailpoint.poc.uiagent.config.AggregationConfig;
+import com.sailpoint.poc.uiagent.config.BedrockConfig;
+import com.sailpoint.poc.uiagent.config.BrowserConfig;
+import com.sailpoint.poc.uiagent.config.VideoConfig;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
@@ -173,6 +179,134 @@ public final class PocConfig {
         return optional("video.debug.frames.dir", "");
     }
 
+    public int videoGridSize() {
+        return clampGrid(Integer.parseInt(optional("video.grid.size", "12")));
+    }
+
+    public double videoGridCellThreshold() {
+        return Double.parseDouble(optional("video.grid.cell.threshold", "0.08"));
+    }
+
+    public double videoScoreWeightBreadth() {
+        return Double.parseDouble(optional("video.score.weight.breadth", "0.4"));
+    }
+
+    public double videoScoreWeightIntensity() {
+        return Double.parseDouble(optional("video.score.weight.intensity", "0.4"));
+    }
+
+    public double videoScoreWeightPresence() {
+        return Double.parseDouble(optional("video.score.weight.presence", "0.2"));
+    }
+
+    public double videoZoneWeightUrlBar() {
+        return Double.parseDouble(optional("video.zone.weight.url_bar", "3.0"));
+    }
+
+    public double videoZoneWeightMainContent() {
+        return Double.parseDouble(optional("video.zone.weight.main_content", "2.0"));
+    }
+
+    public double videoZoneWeightLeftNav() {
+        return Double.parseDouble(optional("video.zone.weight.left_nav", "0.5"));
+    }
+
+    public double videoZoneWeightRightSidebar() {
+        return Double.parseDouble(optional("video.zone.weight.right_sidebar", "0.5"));
+    }
+
+    public double videoZoneWeightBottomBar() {
+        return Double.parseDouble(optional("video.zone.weight.bottom_bar", "0.5"));
+    }
+
+    public double videoPatternNavSpikeThreshold() {
+        return Double.parseDouble(optional("video.pattern.nav.spike.threshold", "0.5"));
+    }
+
+    public double videoPatternNavStableBonus() {
+        return Double.parseDouble(optional("video.pattern.nav.stable.bonus", "2.5"));
+    }
+
+    public double videoPatternNavSpikePenalty() {
+        return Double.parseDouble(optional("video.pattern.nav.spike.penalty", "0.3"));
+    }
+
+    public int videoPatternTypingMaxCells() {
+        return Integer.parseInt(optional("video.pattern.typing.max.cells", "3"));
+    }
+
+    public double videoPatternTypingMaxCellChange() {
+        return Double.parseDouble(optional("video.pattern.typing.max.cell.change", "0.05"));
+    }
+
+    public int videoPatternTypingMinFrames() {
+        return Integer.parseInt(optional("video.pattern.typing.min.frames", "3"));
+    }
+
+    public double videoPatternTypingEndBonus() {
+        return Double.parseDouble(optional("video.pattern.typing.end.bonus", "2.0"));
+    }
+
+    public double videoPatternTypingMidPenalty() {
+        return Double.parseDouble(optional("video.pattern.typing.mid.penalty", "0.2"));
+    }
+
+    public int videoPatternAnimationWindow() {
+        return Integer.parseInt(optional("video.pattern.animation.window", "5"));
+    }
+
+    public double videoPatternAnimationVarianceThreshold() {
+        return Double.parseDouble(optional("video.pattern.animation.variance.threshold", "0.20"));
+    }
+
+    public int videoPatternAnimationMinFrames() {
+        return Integer.parseInt(optional("video.pattern.animation.min.frames", "4"));
+    }
+
+    public double videoPatternAnimationPenalty() {
+        return Double.parseDouble(optional("video.pattern.animation.penalty", "0.1"));
+    }
+
+    public int videoPatternElementMinClusterSize() {
+        return Integer.parseInt(optional("video.pattern.element.min.cluster.size", "4"));
+    }
+
+    public int videoPatternElementPersistFrames() {
+        return Integer.parseInt(optional("video.pattern.element.persist.frames", "2"));
+    }
+
+    public double videoPatternElementBonus() {
+        return Double.parseDouble(optional("video.pattern.element.bonus", "2.0"));
+    }
+
+    public double videoPatternScrollThreshold() {
+        return Double.parseDouble(optional("video.pattern.scroll.threshold", "0.3"));
+    }
+
+    public double videoPatternScrollEndBonus() {
+        return Double.parseDouble(optional("video.pattern.scroll.end.bonus", "1.5"));
+    }
+
+    public double videoPatternScrollMidPenalty() {
+        return Double.parseDouble(optional("video.pattern.scroll.mid.penalty", "0.3"));
+    }
+
+    public double videoSelectionMaxGapSeconds() {
+        return Double.parseDouble(optional("video.selection.max.gap.seconds", "8.0"));
+    }
+
+    public double videoSelectionSimilarityThreshold() {
+        return Double.parseDouble(optional("video.selection.similarity.threshold", "0.92"));
+    }
+
+    public double videoUrlBarMandatoryThreshold() {
+        return Double.parseDouble(optional("video.url.bar.mandatory.threshold", "0.30"));
+    }
+
+    private static int clampGrid(int size) {
+        return Math.max(4, Math.min(32, size));
+    }
+
     // --- Account Aggregation ---
 
     /** Maximum number of pages the aggregation loop will scrape before stopping. */
@@ -183,5 +317,76 @@ public final class PocConfig {
     /** Directory where aggregation CSV files are written. */
     public String aggregationOutputDir() {
         return optional("aggregation.output.dir", "./output");
+    }
+
+    // =========================================================================
+    // REQ-5: Typed sub-config facade methods
+    // =========================================================================
+
+    /**
+     * Returns all Bedrock/LLM settings as a single typed object.
+     * Prefer this over calling individual methods in new code.
+     */
+    public BedrockConfig bedrock() {
+        return new BedrockConfig(
+                awsRegion(), awsProfile(), bedrockModelId(),
+                maxTokens(), temperature());
+    }
+
+    /**
+     * Returns all browser/Playwright settings as a single typed object.
+     * Prefer this over calling individual methods in new code.
+     */
+    public BrowserConfig browser() {
+        return new BrowserConfig(
+                browserHeadless(), browserSlowMoMs(),
+                browserViewportWidth(), browserViewportHeight(),
+                browserStartMaximized(),
+                browserFullscreenViewportWidth(), browserFullscreenViewportHeight(),
+                actionTimeoutClickMs(), actionTimeoutTypeMs(),
+                actionTimeoutNavigateMs(), interActionDelayMs());
+    }
+
+    /**
+     * Returns all agent-loop settings as a single typed object.
+     * Prefer this over calling individual methods in new code.
+     */
+    public AgentConfig agent() {
+        return new AgentConfig(
+                agentMaxSteps(), agentLogFile(),
+                agentNoProgressLimit(), agentMultiViewportMaxFrames());
+    }
+
+    /**
+     * Returns all video-frame-extraction settings as a single typed object.
+     * Prefer this over calling individual methods in new code.
+     */
+    public VideoConfig video() {
+        return new VideoConfig(
+                videoMaxFrames(), videoChangeThreshold(),
+                videoMinGapSeconds(), videoMaxForcedGapSeconds(),
+                videoFrameMaxWidth(), videoJpegQuality(),
+                videoDebugFramesDir(),
+                videoGridSize(), videoGridCellThreshold(),
+                videoScoreWeightBreadth(), videoScoreWeightIntensity(), videoScoreWeightPresence(),
+                videoZoneWeightUrlBar(), videoZoneWeightMainContent(),
+                videoZoneWeightLeftNav(), videoZoneWeightRightSidebar(), videoZoneWeightBottomBar(),
+                videoPatternNavSpikeThreshold(), videoPatternNavStableBonus(), videoPatternNavSpikePenalty(),
+                videoPatternTypingMaxCells(), videoPatternTypingMaxCellChange(), videoPatternTypingMinFrames(),
+                videoPatternTypingEndBonus(), videoPatternTypingMidPenalty(),
+                videoPatternAnimationWindow(), videoPatternAnimationVarianceThreshold(),
+                videoPatternAnimationMinFrames(), videoPatternAnimationPenalty(),
+                videoPatternElementMinClusterSize(), videoPatternElementPersistFrames(), videoPatternElementBonus(),
+                videoPatternScrollThreshold(), videoPatternScrollEndBonus(), videoPatternScrollMidPenalty(),
+                videoSelectionMaxGapSeconds(), videoSelectionSimilarityThreshold(),
+                videoUrlBarMandatoryThreshold());
+    }
+
+    /**
+     * Returns all account-aggregation settings as a single typed object.
+     * Prefer this over calling individual methods in new code.
+     */
+    public AggregationConfig aggregation() {
+        return new AggregationConfig(aggregationMaxPages(), aggregationOutputDir());
     }
 }

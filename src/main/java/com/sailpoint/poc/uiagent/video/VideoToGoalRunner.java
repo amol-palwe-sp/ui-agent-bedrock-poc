@@ -1,6 +1,7 @@
 package com.sailpoint.poc.uiagent.video;
 
 import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.config.VideoConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
@@ -83,36 +84,25 @@ public final class VideoToGoalRunner {
 
         PocConfig config = new PocConfig();
 
-        int effectiveMaxFrames = maxFrames != null ? maxFrames : 
-                Integer.parseInt(config.optional("video.max.frames", "80"));
-        double changeThreshold   = Double.parseDouble(config.optional("video.change.threshold", "0.02"));
-        double minGapSeconds     = Double.parseDouble(config.optional("video.min.gap.seconds", "0.5"));
-        double maxForcedGapSecs  = Double.parseDouble(config.optional("video.max.forced.gap.seconds", "3.0"));
-        int    frameMaxWidth     = Integer.parseInt(config.optional("video.frame.max.width", "1280"));
-        int    jpegQuality       = Integer.parseInt(config.optional("video.jpeg.quality", "75"));
-        String effectiveDebugDir = debugFramesDir != null ? debugFramesDir : 
-                config.optional("video.debug.frames.dir", "");
-
-        if (effectiveDebugDir.isBlank()) {
-            effectiveDebugDir = null;
+        int effectiveMaxFrames = maxFrames != null ? maxFrames : config.video().maxFrames();
+        VideoConfig videoConfig = config.video().withMaxFrames(effectiveMaxFrames);
+        if (debugFramesDir != null && !debugFramesDir.isBlank()) {
+            videoConfig = videoConfig.withDebugFramesDir(debugFramesDir);
         }
 
         System.out.println("Frame extraction settings:");
-        System.out.println("  Max frames: " + effectiveMaxFrames);
-        System.out.println("  Change threshold: " + (changeThreshold * 100) + "%");
-        System.out.println("  Min gap: " + minGapSeconds + "s");
-        System.out.println("  Max forced gap: " + maxForcedGapSecs + "s");
-        System.out.println("  Frame max width: " + (frameMaxWidth > 0 ? frameMaxWidth + "px" : "no resize"));
-        System.out.println("  JPEG quality: " + jpegQuality);
-        if (effectiveDebugDir != null) {
-            System.out.println("  Debug output: " + effectiveDebugDir);
+        System.out.println("  Max frames: " + videoConfig.maxFrames());
+        System.out.println("  Grid size: " + videoConfig.gridSize());
+        System.out.println("  Frame max width: "
+                + (videoConfig.frameMaxWidth() > 0 ? videoConfig.frameMaxWidth() + "px" : "no resize"));
+        System.out.println("  JPEG quality: " + videoConfig.jpegQuality());
+        if (!videoConfig.debugFramesDir().isBlank()) {
+            System.out.println("  Debug output: " + videoConfig.debugFramesDir());
         }
         System.out.println();
 
         System.out.println("Extracting frames from video...");
-        VideoFrameExtractor extractor = new VideoFrameExtractor(
-                effectiveMaxFrames, changeThreshold, minGapSeconds, maxForcedGapSecs,
-                frameMaxWidth, jpegQuality, effectiveDebugDir);
+        VideoFrameExtractor extractor = new VideoFrameExtractor(videoConfig);
         
         List<byte[]> frames = extractor.extractFrames(videoPath);
         System.out.println("Extracted " + frames.size() + " frames from video");

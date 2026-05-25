@@ -1,7 +1,9 @@
 package com.sailpoint.poc.uiagent;
 
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
+import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 
 /**
  * Entry point for the UI Agent POC.
@@ -29,11 +31,13 @@ public final class UiAgentPocApplication {
 
         System.out.println("Goal (merged): " + parsed.goal);
 
-        PocConfig config = new PocConfig();
-        String modelId = config.bedrockModelId();
-        String envModel = config.bedrockModelIdEnvRaw();
-        String source = envModel != null && !envModel.isBlank() ? "env BEDROCK_MODEL_ID" : "application.properties";
+        PocConfig config  = new PocConfig();
+        String    modelId = config.bedrockModelId();
+        String    envModel = config.bedrockModelIdEnvRaw();
+        String    source  = envModel != null && !envModel.isBlank()
+                ? "env BEDROCK_MODEL_ID" : "application.properties";
         System.out.println("Bedrock model id: " + modelId + " (from " + source + ")");
+
         if (BedrockModelHints.likelyRequiresInferenceProfileArn(modelId)) {
             System.err.println(
                     """
@@ -49,38 +53,23 @@ public final class UiAgentPocApplication {
             return;
         }
 
-        try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                        config.awsRegion(),
-                        config.awsProfile(),
-                        modelId,
-                        config.maxTokens(),
-                        config.temperature());
-                BrowserSession browser = new BrowserSession(
-                        config.browserHeadless(),
-                        config.browserSlowMoMs(),
-                        config.browserViewportWidth(),
-                        config.browserViewportHeight(),
-                        config.browserStartMaximized(),
-                        config.browserFullscreenViewportWidth(),
-                        config.browserFullscreenViewportHeight(),
-                        config.actionTimeoutClickMs(),
-                        config.actionTimeoutTypeMs(),
-                        config.actionTimeoutNavigateMs(),
-                        config.interActionDelayMs());
-                ActionLogger actionLogger = new ActionLogger(config.agentLogFile())) {
+        // Build pipeline config — single source of truth for all resource setup (REQ-3)
+        PipelineConfig pipelineConfig = PipelineConfig.builder()
+                .taskType(PipelineConfig.TaskType.PROVISIONING)
+                .startUrl(parsed.startUrl)
+                .goal(parsed.goal)
+                .bedrockConfig(config.bedrock())
+                .browserConfig(config.browser())
+                .agentConfig(config.agent())
+                .build();
 
-            System.out.println("Navigating to: " + parsed.startUrl);
-            browser.navigate(parsed.startUrl);
+        // AgentPipeline owns BedrockClient + BrowserSession + ActionLogger lifecycle (REQ-3.4)
+        PipelineResult result = AgentPipeline.run(pipelineConfig, ProgressListener.SILENT);
 
-            AgentLoop loop = new AgentLoop(
-                    bedrock,
-                    browser,
-                    actionLogger,
-                    config.agentMaxSteps(),
-                    parsed.goal,
-                    config.agentNoProgressLimit())
-                    .setMultiViewportMaxFrames(config.agentMultiViewportMaxFrames());
-            loop.run();
+        if (!result.success()) {
+            System.err.println("Pipeline ended: " + result.exitReason()
+                    + (result.errorMessage().isBlank() ? "" : " — " + result.errorMessage()));
+            System.exit(1);
         }
     }
 
@@ -108,7 +97,7 @@ public final class UiAgentPocApplication {
 
     private record ParsedArgs(String startUrl, String goal) {
         static ParsedArgs parse(String[] args) {
-            String url = null;
+            String url  = null;
             String goal = null;
 
             for (int i = 0; i < args.length; i++) {
