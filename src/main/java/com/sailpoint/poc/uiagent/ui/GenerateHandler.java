@@ -3,12 +3,17 @@ package com.sailpoint.poc.uiagent.ui;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
 import com.sailpoint.poc.uiagent.video.GoalExtractor;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
+import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 import com.sailpoint.poc.uiagent.video.VideoToGoalPrompt;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import org.apache.commons.fileupload.FileItem;
+import org.json.JSONObject;
 import org.apache.commons.fileupload.FileItemFactory;
 import org.apache.commons.fileupload.disk.DiskFileItemFactory;
 import org.apache.commons.fileupload.servlet.ServletFileUpload;
@@ -18,6 +23,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -68,9 +74,10 @@ public final class GenerateHandler implements HttpHandler {
             HttpServletRequestAdapter adapter = new HttpServletRequestAdapter(ex, contentType);
             List<FileItem> items = upload.parseRequest(adapter);
 
-            byte[]  videoBytes  = null;
-            String  overrideUrl = null;
-            Integer maxFrames   = null;
+            byte[]  videoBytes   = null;
+            String  overrideUrl  = null;
+            Integer maxFrames    = null;
+            boolean evalEnabled  = true;
 
             for (FileItem item : items) {
                 if (!item.isFormField() && "video".equals(item.getFieldName())) {
@@ -84,11 +91,12 @@ public final class GenerateHandler implements HttpHandler {
                     videoBytes = item.get();
                 } else if (item.isFormField()) {
                     switch (item.getFieldName()) {
-                        case "url"       -> overrideUrl = item.getString().trim();
-                        case "maxFrames" -> {
+                        case "url"         -> overrideUrl = item.getString().trim();
+                        case "maxFrames"   -> {
                             try { maxFrames = Integer.parseInt(item.getString().trim()); }
                             catch (NumberFormatException ignored) {}
                         }
+                        case "evalEnabled" -> evalEnabled = !"false".equalsIgnoreCase(item.getString().trim());
                     }
                 }
             }
@@ -129,28 +137,59 @@ public final class GenerateHandler implements HttpHandler {
                     ? VideoToGoalPrompt.userPromptWithUrl(overrideUrl)
                     : VideoToGoalPrompt.USER_PROMPT;
 
-            InvokeResult result;
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
                     config.bedrock().region(), config.bedrock().profile(),
                     config.bedrock().modelId(), config.bedrock().maxTokens(),
                     config.bedrock().temperature())) {
-                result = client.invokeWithMultipleImages(
+                InvokeResult result = client.invokeWithMultipleImages(
                         VideoToGoalPrompt.SYSTEM_PROMPT, userPrompt, frames);
+
+                push("LOG:SUCCESS:Claude responded — extracting goal...");
+
+                GoalExtractor.ExtractionResult extraction = GoalExtractor.extract(result.text());
+                String goalLine = extraction.goalLine();
+                if (goalLine != null) {
+                    state.lastGoalLine.set(goalLine);
+                }
+
+                if (!extraction.isValid()) {
+                    push("LOG:WARN:Goal format validation failed (" + extraction.issues().size()
+                            + " issue(s)) — showing results and confidence eval anyway");
+                }
+
+                String navigationGoal = !extraction.steps().isEmpty()
+                        ? String.join(", then ", extraction.steps())
+                        : GoalExtractor.bestEffortNavigationGoal(result.text(), extraction);
+                String targetUrl = extraction.url() != null && !extraction.url().isBlank()
+                        ? extraction.url()
+                        : (overrideUrl != null ? overrideUrl : "");
+
+                // Real-time confidence (same as aggregation: runs whenever eval toggle is on)
+                ConfidenceResult confidence = null;
+                if (evalEnabled) {
+                    try {
+                        VideoAnalysisResult syntheticResult = syntheticProvisioningResult(
+                                navigationGoal, targetUrl);
+                        push("LOG:INFO:Running real-time confidence evaluation...");
+                        confidence = ConfidenceEvaluator.evaluate(
+                                syntheticResult, "PROVISIONING", "LITERAL", client);
+                        confidence = mergeExtractionIssues(confidence, extraction);
+                        push("LOG:INFO:Confidence: " + confidence.confidenceScore()
+                                + " — " + confidence.recommendation());
+                    } catch (Exception e) {
+                        push("LOG:WARN:Confidence evaluation failed: " + e.getMessage());
+                    }
+                } else {
+                    push("LOG:INFO:Confidence eval skipped (disabled by user)");
+                }
+
+                push("STATUS:ready");
+                // Do not emit DONE here — generate uses fetch; DONE is for /api/run only.
+
+                String json = buildResultJson(
+                        extraction, result, frames.size(), confidence, navigationGoal, targetUrl);
+                sendJson(ex, 200, json);
             }
-
-            push("LOG:SUCCESS:Claude responded — extracting goal...");
-
-            GoalExtractor.ExtractionResult extraction = GoalExtractor.extract(result.text());
-            String goalLine = extraction.goalLine();
-            if (goalLine != null) {
-                state.lastGoalLine.set(goalLine);
-            }
-
-            push("STATUS:ready");
-            push("DONE:" + (extraction.isValid() ? "0" : "1"));
-
-            String json = buildResultJson(extraction, result, frames.size());
-            sendJson(ex, 200, json);
 
         } catch (Exception e) {
             push("LOG:ERROR:" + e.getMessage());
@@ -172,16 +211,53 @@ public final class GenerateHandler implements HttpHandler {
         state.logQueue.offer(msg);
     }
 
+    private static VideoAnalysisResult syntheticProvisioningResult(
+            String navigationGoal, String targetUrl) {
+        JSONObject json = new JSONObject();
+        json.put("navigationGoal", navigationGoal != null ? navigationGoal : "");
+        json.put("targetUrl", targetUrl != null ? targetUrl : "");
+        return VideoAnalysisResult.parse(json.toString(), VideoAnalysisRequest.provisioning());
+    }
+
+    private static ConfidenceResult mergeExtractionIssues(
+            ConfidenceResult confidence, GoalExtractor.ExtractionResult extraction) {
+        if (extraction.isValid() || extraction.issues().isEmpty()) {
+            return confidence;
+        }
+        List<String> merged = new ArrayList<>();
+        for (String issue : extraction.issues()) {
+            merged.add("Goal format: " + issue);
+        }
+        for (String w : confidence.warnings()) {
+            if (!merged.contains(w)) {
+                merged.add(w);
+            }
+        }
+        String recommendation = ConfidenceResult.deriveRecommendation(
+                confidence.confidenceScore(), merged, confidence.suspectedHallucinations());
+        return new ConfidenceResult(
+                confidence.confidenceScore(),
+                recommendation,
+                List.copyOf(merged),
+                confidence.suspectedHallucinations(),
+                confidence.placeholderCompliant(),
+                confidence.stepCount(),
+                confidence.reasoning(),
+                confidence.tokenUsage());
+    }
+
     private static String buildResultJson(
             GoalExtractor.ExtractionResult extraction,
             InvokeResult result,
-            int frameCount) {
+            int frameCount,
+            ConfidenceResult confidence,
+            String navigationGoal,
+            String targetUrl) {
 
         List<String> steps  = extraction.steps();
         List<String> issues = extraction.issues();
         String goalLine     = extraction.goalLine();
-        String url          = extraction.url();
-        String navigationGoal = steps.isEmpty() ? "" : String.join(", then ", steps);
+        String url          = targetUrl != null && !targetUrl.isBlank() ? targetUrl : extraction.url();
 
         StringBuilder sb = new StringBuilder("{");
         sb.append("\"goalLine\":").append(quoted(goalLine));
@@ -205,6 +281,19 @@ public final class GenerateHandler implements HttpHandler {
         sb.append(",\"outputTokens\":").append(result.usage().outputTokens());
         sb.append(",\"costUsd\":").append(result.usage().totalCostUsd());
         sb.append(",\"frameCount\":").append(frameCount);
+        // Confidence evaluation (best-effort — null when eval was skipped or failed)
+        if (confidence != null) {
+            sb.append(",\"confidenceScore\":").append(confidence.confidenceScore());
+            sb.append(",\"recommendation\":").append(quoted(confidence.recommendation()));
+            sb.append(",\"confidenceReasoning\":").append(quoted(confidence.reasoning()));
+            sb.append(",\"confidenceWarnings\":[");
+            List<String> warnings = confidence.warnings();
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(quoted(warnings.get(i)));
+            }
+            sb.append("]");
+        }
         sb.append("}");
         return sb.toString();
     }

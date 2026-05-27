@@ -133,9 +133,7 @@ ui-agent-bedrock-poc/
 │   │   │   ├── AggregationPlanRunner.java# Step 1 CLI (uses AgentPipeline)
 │   │   │   ├── AccountAggregator.java    # Table detection + pagination (unchanged)
 │   │   │   ├── PaginationPattern.java    # Data record (unchanged)
-│   │   │   ├── AggregationPlan.java      # Plan JSON serialization (unchanged)
-│   │   │   ├── AggregationVideoPrompt.java        # @Deprecated → use VideoAnalysisPrompt
-│   │   │   └── AggregationVideoAnalysisPrompt.java# @Deprecated → use VideoAnalysisPrompt
+│   │   │   └── AggregationPlan.java      # Plan JSON serialization (unchanged)
 │   │   │
 │   │   ├── bedrock/
 │   │   │   └── BedrockAnthropicClient.java  # Bedrock InvokeModel + vision (unchanged)

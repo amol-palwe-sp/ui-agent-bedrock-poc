@@ -83,3 +83,13 @@ task runAggregation(type: JavaExec) {
         args project.property('args').split(' ')
     }
 }
+
+task runEval(type: JavaExec) {
+    group       = 'application'
+    description = 'Run video analysis evaluation benchmarks against known ground truth'
+    mainClass   = 'com.sailpoint.poc.uiagent.eval.benchmark.VideoAnalysisEvaluator'
+    classpath   = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
+}

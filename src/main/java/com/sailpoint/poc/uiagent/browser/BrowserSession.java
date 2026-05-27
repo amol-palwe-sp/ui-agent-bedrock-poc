@@ -12,6 +12,9 @@ import com.microsoft.playwright.options.BoundingBox;
 import com.microsoft.playwright.options.LoadState;
 import com.microsoft.playwright.options.ScreenshotType;
 import com.microsoft.playwright.options.WaitUntilState;
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -59,94 +62,19 @@ public final class BrowserSession implements AutoCloseable {
     // JavaScript constants
     // -------------------------------------------------------------------------
 
-    /**
-     * Tags visible interactables in the main frame AND same-origin iframes, returning a flat JSON
-     * array. Cross-origin iframes are silently skipped.
-     */
-    private static final String SCRAPE_AND_TAG_JS =
-            """
-            () => {
-              const ATTR = 'data-ui-agent-id';
-              let globalIdx = 0;
-              const out = [];
+    /** Fingerprint-based stable ids (REQ-RR-1) — loaded from {@code fingerprint-scrape.js}. */
+    private static final String SCRAPE_AND_TAG_JS = loadFingerprintScrapeJs();
 
-              function isVisible(el) {
-                const r = el.getBoundingClientRect();
-                if (r.width < 2 || r.height < 2) return false;
-                const st = window.getComputedStyle(el);
-                if (st.visibility === 'hidden' || st.display === 'none'
-                    || parseFloat(st.opacity) === 0) return false;
-                if (el.hasAttribute('disabled')
-                    || el.getAttribute('aria-hidden') === 'true') return false;
-                const cx = r.left + r.width / 2;
-                const cy = r.top + r.height / 2;
-                if (cx < 0 || cy < 0 || cx > window.innerWidth
-                    || cy > window.innerHeight) return false;
-                return true;
-              }
-
-              function scrapeDoc(doc, frameLabel) {
-                // clear old tags in this document
-                doc.querySelectorAll('[' + ATTR + ']')
-                   .forEach(el => el.removeAttribute(ATTR));
-
-                const sel = [
-                  'a[href]', 'button', 'input:not([type="hidden"])',
-                  'select', 'textarea',
-                  '[role="button"]', '[role="link"]', '[role="menuitem"]',
-                  '[role="checkbox"]', '[role="radio"]', '[role="tab"]',
-                  '[role="option"]', '[role="combobox"]', '[role="textbox"]',
-                  '[contenteditable=""]', '[contenteditable="true"]'
-                ].join(',');
-
-                const visible = Array.from(doc.querySelectorAll(sel)).filter(isVisible);
-                visible.forEach(el => {
-                  const idx = globalIdx++;
-                  el.setAttribute(ATTR, String(idx));
-                  const tag  = el.tagName.toLowerCase();
-                  const role = el.getAttribute('role') || '';
-                  const type = (el.getAttribute('type') || '').toLowerCase();
-                  const ariaLabel   = el.getAttribute('aria-label') || '';
-                  const placeholder = el.getAttribute('placeholder') || '';
-                  const name        = el.getAttribute('name') || '';
-                  const href        = el.getAttribute('href') || '';
-                  const value       = ('value' in el) ? (el.value || '') : '';
-                  const text        = (el.innerText || el.textContent || '')
-                                       .replace(/\\s+/g, ' ').trim();
-                  const label       = (ariaLabel || text || placeholder
-                                      || el.getAttribute('title') || name || '')
-                                       .slice(0, 200);
-                  let optionsArr;
-                  if (tag === 'select') {
-                    optionsArr = Array.from(el.options || []).slice(0, 50)
-                      .map(o => ({ value: o.value,
-                                   label: (o.label || o.text || '').trim() }));
-                  }
-                  out.push({
-                    id: idx, tag, role, htmlType: type, name, placeholder,
-                    ariaLabel, frame: frameLabel,
-                    href:  href  ? href.slice(0, 200)  : '',
-                    value: typeof value === 'string' ? value.slice(0, 200) : '',
-                    text:  label,
-                    options: optionsArr
-                  });
-                });
-              }
-
-              // Main frame
-              scrapeDoc(document, 'main');
-
-              // Same-origin iframes
-              document.querySelectorAll('iframe').forEach((iframe, fi) => {
-                try {
-                  const doc = iframe.contentDocument;
-                  if (doc && doc.body) scrapeDoc(doc, 'iframe-' + fi);
-                } catch (e) { /* cross-origin — skip */ }
-              });
-
-              return JSON.stringify(out);
+    private static String loadFingerprintScrapeJs() {
+        try (InputStream in = BrowserSession.class.getResourceAsStream("/fingerprint-scrape.js")) {
+            if (in == null) {
+                throw new IllegalStateException("Missing classpath /fingerprint-scrape.js");
             }
-            """;
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8).trim();
+        } catch (IOException e) {
+            throw new ExceptionInInitializerError(e);
+        }
+    }
 
     /** Last-resort JS click for elements where Playwright + coordinate clicks both fail. */
     private static final String JS_CLICK =
@@ -315,6 +243,9 @@ public final class BrowserSession implements AutoCloseable {
      * always interacts with what the user sees.
      */
     private Page page;
+
+    /** Cached result of the last {@link #listInteractables()} call. */
+    private org.json.JSONArray lastInteractables = new org.json.JSONArray();
 
     // -------------------------------------------------------------------------
     // Construction
@@ -581,20 +512,31 @@ public final class BrowserSession implements AutoCloseable {
     // -------------------------------------------------------------------------
 
     /**
-     * Tags visible interactables (main frame + same-origin iframes) and returns JSON descriptions.
-     * Retries once on context-destroyed errors (common right after a navigation).
+     * Tags interactables in viewport only (AgentLoop / screenshots). REQ-SIV-1.2.
      */
     public JSONArray listInteractables() {
+        return listInteractables(true);
+    }
+
+    /**
+     * Tags interactables and returns JSON descriptions (REQ-SIV-1).
+     *
+     * @param viewportOnly {@code true} — only elements whose center is in the viewport
+     *                     (AgentLoop). {@code false} — full DOM including below-fold
+     *                     (ScriptExecutor replay).
+     */
+    public JSONArray listInteractables(boolean viewportOnly) {
+        String js = SCRAPE_AND_TAG_JS.replace("__VIEWPORT_ONLY__", Boolean.toString(viewportOnly));
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 page.waitForLoadState(LoadState.DOMCONTENTLOADED,
                         new Page.WaitForLoadStateOptions().setTimeout(2_000));
             } catch (PlaywrightException ignored) {}
             try {
-                String json = (String) page.evaluate(SCRAPE_AND_TAG_JS);
-                return new JSONArray(json);
+                String json = (String) page.evaluate(js);
+                lastInteractables = new JSONArray(json);
+                return lastInteractables;
             } catch (PlaywrightException e) {
-                // Normal after a navigation; the retry below handles it.
                 System.out.println("  [INFO] listInteractables retry (attempt " + (attempt + 1)
                         + "): " + firstLine(e.getMessage()));
                 sleepQuietly(750);
@@ -607,7 +549,7 @@ public final class BrowserSession implements AutoCloseable {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < elements.length(); i++) {
             JSONObject el = elements.getJSONObject(i);
-            sb.append('[').append(el.getInt("id")).append("] ").append(el.optString("tag"));
+            sb.append('[').append(el.optString("id")).append("] ").append(el.optString("tag"));
             String htmlType = el.optString("htmlType");
             if (!htmlType.isEmpty()) sb.append(" type=").append(htmlType);
             String role = el.optString("role");
@@ -648,16 +590,40 @@ public final class BrowserSession implements AutoCloseable {
     // Actions
     // -------------------------------------------------------------------------
 
-    public JSONObject clickByElementId(int elementId) {
+    public JSONArray lastInteractables() {
+        return lastInteractables;
+    }
+
+    public int countByStableId(String stableId) {
+        if (stableId == null || stableId.isBlank()) {
+            return 0;
+        }
+        try {
+            return page.locator("[" + ATTR + "='" + stableId + "']").count();
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
+
+    public JSONObject findElementMeta(String stableId) {
+        for (int i = 0; i < lastInteractables.length(); i++) {
+            JSONObject el = lastInteractables.getJSONObject(i);
+            if (stableId.equals(el.optString("id"))) {
+                return el;
+            }
+        }
+        return null;
+    }
+
+    public JSONObject clickByStableId(String stableId) {
         applyInterActionDelay();
         safeguardBeforeAction();
-        Locator locator = locatorFor(elementId);
-        if (locator == null) return fail("no element with id=" + elementId);
+        Locator locator = locatorFor(stableId);
+        if (locator == null) return fail("no element with id=" + stableId);
 
-        // Pre-action guard: skip immediately if element is disabled.
-        JSONObject state = elementState(elementId);
+        JSONObject state = elementState(stableId);
         if (state.optBoolean("disabled", false)) {
-            return fail("element id=" + elementId + " is disabled — cannot click");
+            return fail("element id=" + stableId + " is disabled — cannot click");
         }
 
         try {
@@ -669,7 +635,7 @@ public final class BrowserSession implements AutoCloseable {
 
             // Fallback 1: check for a blocking element and click it first.
             try {
-                JSONObject blocker = blockerAtPoint(elementId);
+                JSONObject blocker = blockerAtPoint(stableId);
                 if (blocker.optBoolean("ok", false) && !blocker.isNull("blocker_id")) {
                     String blockerId = blocker.optString("blocker_id");
                     String blockerTag = blocker.optString("blocker_tag", "?");
@@ -703,7 +669,7 @@ public final class BrowserSession implements AutoCloseable {
 
             // Fallback 3: JS click.
             try {
-                String json = (String) page.evaluate(JS_CLICK, elementId);
+                String json = (String) page.evaluate(JS_CLICK, stableId);
                 JSONObject res = new JSONObject(json);
                 if (res.optBoolean("ok", false)) {
                     settleAfterAction();
@@ -719,20 +685,23 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
-    public JSONObject typeByElementId(int elementId, String text) {
+    public JSONObject clickByElementId(int elementId) {
+        return clickByStableId(String.valueOf(elementId));
+    }
+
+    public JSONObject typeByStableId(String stableId, String text) {
         if (text == null) text = "";
         applyInterActionDelay();
         safeguardBeforeAction();
-        Locator locator = locatorFor(elementId);
-        if (locator == null) return fail("no element with id=" + elementId);
+        Locator locator = locatorFor(stableId);
+        if (locator == null) return fail("no element with id=" + stableId);
 
-        // Pre-action guard: disabled or readonly check.
-        JSONObject state = elementState(elementId);
+        JSONObject state = elementState(stableId);
         if (state.optBoolean("disabled", false)) {
-            return fail("element id=" + elementId + " is disabled — cannot type");
+            return fail("element id=" + stableId + " is disabled — cannot type");
         }
         if (state.optBoolean("readonly", false)) {
-            return fail("element id=" + elementId + " is readonly — cannot type");
+            return fail("element id=" + stableId + " is readonly — cannot type");
         }
 
         try {
@@ -781,7 +750,7 @@ public final class BrowserSession implements AutoCloseable {
 
             // Strategy 4: JS native value setter + React input/change events.
             Map<String, Object> args = new HashMap<>();
-            args.put("id", elementId);
+            args.put("id", stableId);
             args.put("text", text);
             String json = (String) page.evaluate(JS_FORCE_VALUE, args);
             JSONObject res = new JSONObject(json);
@@ -798,11 +767,15 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
-    public JSONObject hoverByElementId(int elementId) {
+    public JSONObject typeByElementId(int elementId, String text) {
+        return typeByStableId(String.valueOf(elementId), text);
+    }
+
+    public JSONObject hoverByStableId(String stableId) {
         applyInterActionDelay();
         safeguardBeforeAction();
-        Locator locator = locatorFor(elementId);
-        if (locator == null) return fail("no element with id=" + elementId);
+        Locator locator = locatorFor(stableId);
+        if (locator == null) return fail("no element with id=" + stableId);
         try {
             scrollIntoView(locator);
             locator.hover(new Locator.HoverOptions().setTimeout(clickTimeoutMs));
@@ -813,15 +786,19 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
-    public JSONObject checkboxByElementId(int elementId, boolean targetChecked) {
+    public JSONObject hoverByElementId(int elementId) {
+        return hoverByStableId(String.valueOf(elementId));
+    }
+
+    public JSONObject checkboxByStableId(String stableId, boolean targetChecked) {
         applyInterActionDelay();
         safeguardBeforeAction();
-        Locator locator = locatorFor(elementId);
-        if (locator == null) return fail("no element with id=" + elementId);
+        Locator locator = locatorFor(stableId);
+        if (locator == null) return fail("no element with id=" + stableId);
 
-        JSONObject state = elementState(elementId);
+        JSONObject state = elementState(stableId);
         if (state.optBoolean("disabled", false)) {
-            return fail("element id=" + elementId + " is disabled — cannot toggle checkbox");
+            return fail("element id=" + stableId + " is disabled — cannot toggle checkbox");
         }
         try {
             scrollIntoView(locator);
@@ -842,11 +819,15 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
-    public JSONObject selectOptionByElementId(int elementId, String value, String label) {
+    public JSONObject checkboxByElementId(int elementId, boolean targetChecked) {
+        return checkboxByStableId(String.valueOf(elementId), targetChecked);
+    }
+
+    public JSONObject selectOptionByStableId(String stableId, String value, String label) {
         applyInterActionDelay();
         safeguardBeforeAction();
-        Locator locator = locatorFor(elementId);
-        if (locator == null) return fail("no element with id=" + elementId);
+        Locator locator = locatorFor(stableId);
+        if (locator == null) return fail("no element with id=" + stableId);
         try {
             scrollIntoView(locator);
             String tag = (String) locator.evaluate("el => el.tagName && el.tagName.toLowerCase()");
@@ -885,6 +866,10 @@ public final class BrowserSession implements AutoCloseable {
         }
     }
 
+    public JSONObject selectOptionByElementId(int elementId, String value, String label) {
+        return selectOptionByStableId(String.valueOf(elementId), value, label);
+    }
+
     public JSONObject keypress(String key) {
         if (key == null || key.isBlank()) return fail("keypress requires key");
         applyInterActionDelay();
@@ -920,9 +905,9 @@ public final class BrowserSession implements AutoCloseable {
     // Helpers
     // -------------------------------------------------------------------------
 
-    private Locator locatorFor(int elementId) {
+    private Locator locatorFor(String stableId) {
         try {
-            Locator locator = page.locator("[" + ATTR + "='" + elementId + "']");
+            Locator locator = page.locator("[" + ATTR + "='" + stableId + "']");
             return locator.count() > 0 ? locator.first() : null;
         } catch (PlaywrightException firstAttempt) {
             try {
@@ -930,10 +915,10 @@ public final class BrowserSession implements AutoCloseable {
                         new Page.WaitForLoadStateOptions().setTimeout(5_000));
             } catch (PlaywrightException ignored) {}
             try {
-                Locator locator = page.locator("[" + ATTR + "='" + elementId + "']");
+                Locator locator = page.locator("[" + ATTR + "='" + stableId + "']");
                 return locator.count() > 0 ? locator.first() : null;
             } catch (PlaywrightException secondAttempt) {
-                System.err.println("locatorFor(" + elementId + ") failed twice: "
+                System.err.println("locatorFor(" + stableId + ") failed twice: "
                         + secondAttempt.getMessage());
                 return null;
             }
@@ -948,9 +933,9 @@ public final class BrowserSession implements AutoCloseable {
     }
 
     /** Reads element disabled/readonly state via JS (dynamic — reflects post-mutation values). */
-    private JSONObject elementState(int elementId) {
+    private JSONObject elementState(String stableId) {
         try {
-            String json = (String) page.evaluate(JS_ELEMENT_STATE, elementId);
+            String json = (String) page.evaluate(JS_ELEMENT_STATE, stableId);
             return new JSONObject(json);
         } catch (RuntimeException e) {
             return new JSONObject().put("ok", false);
@@ -961,9 +946,9 @@ public final class BrowserSession implements AutoCloseable {
      * Uses {@code elementFromPoint} to find whether another element is covering the target.
      * Returns JSON with {@code blocker_id} (the ui-agent-id of the covering element, or null).
      */
-    private JSONObject blockerAtPoint(int elementId) {
+    private JSONObject blockerAtPoint(String stableId) {
         try {
-            String json = (String) page.evaluate(JS_BLOCKER_AT_POINT, elementId);
+            String json = (String) page.evaluate(JS_BLOCKER_AT_POINT, stableId);
             return new JSONObject(json);
         } catch (RuntimeException e) {
             return new JSONObject().put("ok", false);

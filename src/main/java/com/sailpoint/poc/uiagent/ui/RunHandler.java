@@ -6,6 +6,7 @@ import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
 import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
 import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
 import com.sailpoint.poc.uiagent.pipeline.PipelineStatus;
+import com.sailpoint.poc.uiagent.pipeline.PipelineMode;
 import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
@@ -13,6 +14,7 @@ import com.sun.net.httpserver.HttpHandler;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.BlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,44 +49,69 @@ public final class RunHandler implements HttpHandler {
             return;
         }
 
-        // ── Read body ─────────────────────────────────────────────────────────
-        String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8).trim();
-        String goalLine = extractJsonString(body, "goalLine");
-        if (goalLine == null || goalLine.isBlank()) {
-            sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}");
+        RunRequest request;
+        try {
+            String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            request = RunRequest.fromJson(body);
+        } catch (Exception e) {
+            sendJson(ex, 400, "{\"error\":\"Invalid JSON body\"}");
             return;
         }
 
-        // ── Parse url + goal from the command line string ─────────────────────
-        Matcher urlM  = URL_PATTERN.matcher(goalLine);
-        Matcher goalM = GOAL_PATTERN.matcher(goalLine);
-        if (!urlM.find() || !goalM.find()) {
-            sendJson(ex, 400, "{\"error\":\"goalLine must contain --url=... and --goal=...\"}");
-            return;
+        String startUrl;
+        String goalText;
+
+        if (request.isReplay()) {
+            if (request.scriptPath().isBlank()) {
+                sendJson(ex, 400, "{\"error\":\"scriptPath is required for REPLAY mode\"}");
+                return;
+            }
+            startUrl = "";
+            goalText = "";
+        } else {
+            if (request.goalLine().isBlank()) {
+                sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}");
+                return;
+            }
+            Matcher urlM  = URL_PATTERN.matcher(request.goalLine());
+            Matcher goalM = GOAL_PATTERN.matcher(request.goalLine());
+            if (!urlM.find() || !goalM.find()) {
+                sendJson(ex, 400, "{\"error\":\"goalLine must contain --url=... and --goal=...\"}");
+                return;
+            }
+            startUrl = urlM.group(1).trim();
+            goalText = goalM.group(1).trim();
+            if (goalText.endsWith("'")) {
+                goalText = goalText.substring(0, goalText.length() - 1).trim();
+            }
         }
-        String startUrl  = urlM.group(1).trim();
-        String goalText  = goalM.group(1).trim();
-        if (goalText.endsWith("'")) goalText = goalText.substring(0, goalText.length() - 1).trim();
 
         state.agentRunning.set(true);
         state.logQueue.offer("STATUS:running");
+        state.logQueue.offer("LOG:INFO:Mode " + request.mode()
+                + (request.isReplay() ? " — script " + request.scriptPath() : ""));
 
-        final String finalUrl  = startUrl;
-        final String finalGoal = goalText;
+        final String finalUrl   = startUrl;
+        final String finalGoal  = goalText;
+        final RunRequest finalReq = request;
 
         Thread agent = new Thread(() -> {
             try {
                 PocConfig config = new PocConfig();
 
-                // Build pipeline config — single source of truth for resource setup (REQ-3.3)
-                PipelineConfig pipelineConfig = PipelineConfig.builder()
+                PipelineConfig.Builder pcb = PipelineConfig.builder()
+                        .mode(finalReq.pipelineMode())
                         .taskType(PipelineConfig.TaskType.PROVISIONING)
                         .startUrl(finalUrl)
                         .goal(finalGoal)
+                        .scriptPath(finalReq.scriptPath())
+                        .tokenValues(finalReq.tokenValues())
+                        .saveScriptTo(config.scriptOutputDir())
                         .bedrockConfig(config.bedrock())
                         .browserConfig(config.browser())
-                        .agentConfig(config.agent())
-                        .build();
+                        .agentConfig(config.agent());
+
+                PipelineConfig pipelineConfig = pcb.build();
 
                 // ProgressListener forwards pipeline output to SSE queue (REQ-3.5)
                 ProgressListener listener = new QueueProgressListener(state.logQueue);
@@ -155,7 +182,15 @@ public final class RunHandler implements HttpHandler {
 
         @Override
         public void onStatusChange(PipelineStatus status) {
-            // Translate PipelineStatus to the legacy SSE status strings the UI understands
+            String legacy = switch (status) {
+                case STARTING, NAVIGATING, AGENT_RUNNING, DETECTING_TABLE, AGGREGATING, WRITING_CSV -> "running";
+                case DONE -> "ready";
+                case FAILED, INTERRUPTED -> "error";
+                default -> null;
+            };
+            if (legacy != null) {
+                queue.offer("STATUS:" + legacy);
+            }
         }
 
         @Override

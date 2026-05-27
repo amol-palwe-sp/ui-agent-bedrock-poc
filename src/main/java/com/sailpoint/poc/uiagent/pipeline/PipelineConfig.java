@@ -71,6 +71,10 @@ public final class PipelineConfig {
     private final BrowserConfig      browserConfig;
     private final BedrockConfig      bedrockConfig;
     private final AggregationConfig  aggregationConfig;
+    private final PipelineMode       mode;
+    private final String             scriptPath;
+    private final String             scriptName;
+    private final String             saveScriptTo;
 
     private PipelineConfig(Builder b) {
         this.taskType          = b.taskType;
@@ -82,6 +86,10 @@ public final class PipelineConfig {
         this.browserConfig     = b.browserConfig;
         this.bedrockConfig     = b.bedrockConfig;
         this.aggregationConfig = b.aggregationConfig;
+        this.mode              = b.mode;
+        this.scriptPath        = b.scriptPath;
+        this.scriptName        = b.scriptName;
+        this.saveScriptTo      = b.saveScriptTo;
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -95,8 +103,14 @@ public final class PipelineConfig {
     public BrowserConfig      browserConfig()     { return browserConfig; }
     public BedrockConfig      bedrockConfig()     { return bedrockConfig; }
     public AggregationConfig  aggregationConfig() { return aggregationConfig; }
+    public PipelineMode       mode()              { return mode; }
+    public String             scriptPath()        { return scriptPath; }
+    public String             scriptName()        { return scriptName; }
+    public String             saveScriptTo()      { return saveScriptTo; }
 
     public boolean isAggregation() { return taskType == TaskType.AGGREGATION; }
+    public boolean isRecord()      { return mode == PipelineMode.RECORD; }
+    public boolean isReplay()      { return mode == PipelineMode.REPLAY; }
 
     /**
      * Returns {@link #goal()} with all {@code {Token}} placeholders replaced by
@@ -125,8 +139,16 @@ public final class PipelineConfig {
         private BrowserConfig      browserConfig     = null;
         private BedrockConfig      bedrockConfig     = null;
         private AggregationConfig  aggregationConfig = null;
+        private PipelineMode       mode              = PipelineMode.GENERATE;
+        private String             scriptPath        = "";
+        private String             scriptName        = "";
+        private String             saveScriptTo      = "./output/scripts";
 
         public Builder taskType(TaskType t)                { this.taskType = t;          return this; }
+        public Builder mode(PipelineMode m)                { this.mode = m;               return this; }
+        public Builder scriptPath(String p)                { this.scriptPath = p;        return this; }
+        public Builder scriptName(String n)                { this.scriptName = n;        return this; }
+        public Builder saveScriptTo(String d)              { this.saveScriptTo = d;      return this; }
         public Builder startUrl(String u)                  { this.startUrl = u;          return this; }
         public Builder goal(String g)                      { this.goal = g;              return this; }
         public Builder tokenValues(Map<String,String> tv)  {
@@ -138,10 +160,18 @@ public final class PipelineConfig {
         public Builder aggregationConfig(AggregationConfig a){ this.aggregationConfig = a; return this; }
 
         public PipelineConfig build() {
-            if (startUrl == null || startUrl.isBlank())
-                throw new IllegalStateException("PipelineConfig: startUrl is required");
-            if (goal == null || goal.isBlank())
-                throw new IllegalStateException("PipelineConfig: goal is required");
+            if (mode == PipelineMode.REPLAY) {
+                if (scriptPath == null || scriptPath.isBlank()) {
+                    throw new IllegalStateException("PipelineConfig: scriptPath is required for REPLAY");
+                }
+            } else if (mode != PipelineMode.LIST) {
+                if (startUrl == null || startUrl.isBlank()) {
+                    throw new IllegalStateException("PipelineConfig: startUrl is required");
+                }
+                if (goal == null || goal.isBlank()) {
+                    throw new IllegalStateException("PipelineConfig: goal is required");
+                }
+            }
             if (agentConfig == null)
                 throw new IllegalStateException("PipelineConfig: agentConfig is required");
             if (browserConfig == null)

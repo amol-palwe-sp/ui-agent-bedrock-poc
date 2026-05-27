@@ -60,7 +60,7 @@ public final class ActionLogger implements AutoCloseable {
      * @param step         step index (0-based)
      * @param actionIndex  index within the batch (0-based)
      * @param type         action type string (e.g. "CLICK")
-     * @param elementId    element id or -1 if not applicable
+     * @param elementId    stable element id, or null/blank if not applicable
      * @param result       JSONObject returned by BrowserSession (contains ok, strategy/err)
      * @param url          current page URL
      * @param elapsedMs    wall-clock duration of the action
@@ -69,7 +69,7 @@ public final class ActionLogger implements AutoCloseable {
             int step,
             int actionIndex,
             String type,
-            int elementId,
+            String elementId,
             JSONObject result,
             String url,
             long elapsedMs) {
@@ -80,7 +80,9 @@ public final class ActionLogger implements AutoCloseable {
             entry.put("step", step);
             entry.put("action_index", actionIndex);
             entry.put("type", type);
-            if (elementId >= 0) entry.put("element_id", elementId);
+            if (elementId != null && !elementId.isBlank()) {
+                entry.put("element_id", elementId);
+            }
             entry.put("ok", result.optBoolean("ok", false));
             if (result.has("strategy")) entry.put("strategy", result.optString("strategy"));
             if (result.has("err"))      entry.put("err",      result.optString("err"));
@@ -97,7 +99,7 @@ public final class ActionLogger implements AutoCloseable {
     /** Convenience overload for actions without a target element (GOTO, WAIT, …). */
     public void log(int step, int actionIndex, String type,
                     JSONObject result, String url, long elapsedMs) {
-        log(step, actionIndex, type, -1, result, url, elapsedMs);
+        log(step, actionIndex, type, null, result, url, elapsedMs);
     }
 
     @Override

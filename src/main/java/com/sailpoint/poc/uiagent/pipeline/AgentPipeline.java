@@ -7,6 +7,14 @@ import com.sailpoint.poc.uiagent.aggregation.AccountAggregator;
 import com.sailpoint.poc.uiagent.aggregation.TableDetectionResult;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.replay.ReplayResult;
+import com.sailpoint.poc.uiagent.replay.Script;
+import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.config.ReplayConfig;
+import com.sailpoint.poc.uiagent.replay.ScriptExecutor;
+import com.sailpoint.poc.uiagent.replay.ScriptLister;
+import com.sailpoint.poc.uiagent.replay.ScriptRecorder;
+import com.sailpoint.poc.uiagent.replay.TokenValues;
 import com.sailpoint.poc.uiagent.config.AgentConfig;
 import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.BrowserConfig;
@@ -87,6 +95,12 @@ public final class AgentPipeline {
         TokenUsage totalUsage = TokenUsage.ZERO;
 
         try {
+            if (config.mode() == PipelineMode.LIST) {
+                ScriptLister.list(config.saveScriptTo());
+                pl.onStatusChange(PipelineStatus.DONE);
+                return PipelineResult.provisioningSuccess(totalUsage, "").build();
+            }
+
             pl.onStatusChange(PipelineStatus.STARTING);
 
             BedrockConfig bc  = config.bedrockConfig();
@@ -105,6 +119,10 @@ public final class AgentPipeline {
                          brc.navigateTimeoutMs(), brc.interActionDelayMs());
                  ActionLogger actionLogger = new ActionLogger(ac.logFile())) {
 
+                if (config.isReplay()) {
+                    return runReplay(config, pl, browser, bedrock, totalUsage);
+                }
+
                 // ── Navigate to start URL ─────────────────────────────────────
                 pl.onStatusChange(PipelineStatus.NAVIGATING);
                 pl.onLog("INFO", "Navigating to " + config.startUrl() + "...");
@@ -117,16 +135,38 @@ public final class AgentPipeline {
                         + resolvedGoal.substring(0, Math.min(80, resolvedGoal.length()))
                         + (resolvedGoal.length() > 80 ? "…" : "") + ")");
 
+                ScriptRecorder recorder = null;
+                if (config.isRecord()) {
+                    recorder = new ScriptRecorder(
+                            config.startUrl(), config.goal(),
+                            config.taskType().name(), config.scriptName());
+                }
+
                 AgentLoop loop = new AgentLoop(
                         bedrock, browser, actionLogger,
                         ac.maxSteps(), resolvedGoal, ac.noProgressLimit())
                         .setMultiViewportMaxFrames(ac.multiViewportMaxFrames());
+                if (recorder != null) {
+                    loop.enableRecording(recorder);
+                }
 
                 TokenUsage loopUsage = loop.run();
                 totalUsage = totalUsage.add(loopUsage);
                 pl.onTokenUsage(totalUsage);
 
                 String finalUrl = browser.currentUrl();
+
+                if (config.isRecord() && recorder != null && recorder.shouldSave()) {
+                    try {
+                        Script script = recorder.script();
+                        script.setBrowserWidth(brc.viewportWidth());
+                        script.setBrowserHeight(brc.viewportHeight());
+                        Path saved = script.save(config.saveScriptTo());
+                        pl.onLog("SUCCESS", "Script saved to " + saved);
+                    } catch (IOException e) {
+                        pl.onLog("WARNING", "Failed to save script: " + e.getMessage());
+                    }
+                }
 
                 if (!config.isAggregation()) {
                     // PROVISIONING: pipeline is done
@@ -200,6 +240,27 @@ public final class AgentPipeline {
         } finally {
             System.setOut(originalOut);
         }
+    }
+
+    private static PipelineResult runReplay(
+            PipelineConfig config,
+            ProgressListener pl,
+            BrowserSession browser,
+            BedrockAnthropicClient bedrock,
+            TokenUsage totalUsage) throws Exception {
+        Script script = Script.load(config.scriptPath());
+        ReplayConfig replayConfig = new PocConfig().replay();
+        ScriptExecutor executor = new ScriptExecutor(browser, bedrock, true, replayConfig);
+        ReplayResult replay = executor.replay(script, TokenValues.fromMap(config.tokenValues()));
+        pl.onTokenUsage(totalUsage);
+        if (replay.success()) {
+            pl.onStatusChange(PipelineStatus.DONE);
+            return PipelineResult.provisioningSuccess(totalUsage, browser.currentUrl()).build();
+        }
+        pl.onStatusChange(PipelineStatus.FAILED);
+        String err = replay.failedSteps().isEmpty() ? "replay failed"
+                : replay.failedSteps().get(0).reason();
+        return PipelineResult.error(config.taskType(), totalUsage, err);
     }
 
     // ── CSV helpers ───────────────────────────────────────────────────────────

@@ -41,6 +41,14 @@
   const btnContinueAnyway      = document.getElementById('btnContinueAnyway');
   const btnGoBack              = document.getElementById('btnGoBack');
   const btnRun                 = document.getElementById('btnRun');
+  const confidencePanel        = document.getElementById('confidencePanel');
+  const confidenceRingFill     = document.getElementById('confidenceRingFill');
+  const confidenceScoreNum     = document.getElementById('confidenceScoreNum');
+  const confidenceRecBadge     = document.getElementById('confidenceRecBadge');
+  const confidenceReasoning    = document.getElementById('confidenceReasoning');
+  const confidenceWarningsList = document.getElementById('confidenceWarningsList');
+  const evalToggle             = document.getElementById('evalToggle');
+  const evalToggleBadge        = document.getElementById('evalToggleBadge');
   const sectionLog             = document.getElementById('sectionLog');
   const logPanel               = document.getElementById('logPanel');
   const btnStop                = document.getElementById('btnStop');
@@ -73,6 +81,14 @@
     btnRun.addEventListener('click', handleRun);
     btnStop.addEventListener('click', handleStop);
     btnAddStep.addEventListener('click', function () { addStep(''); });
+    if (evalToggle) {
+      evalToggle.addEventListener('change', function () {
+        var on = evalToggle.checked;
+        evalToggleBadge.textContent = on ? 'ON' : 'OFF';
+        evalToggleBadge.className = 'toggle-badge ' + (on ? 'toggle-badge-on' : 'toggle-badge-off');
+        if (!on && confidencePanel) confidencePanel.classList.add('hidden');
+      });
+    }
     btnContinueAnyway.addEventListener('click', function () {
       hideWarningBanner();
       doRun();
@@ -129,6 +145,7 @@
     form.append('video', uploadedFile);
     if (overrideUrl.value.trim()) form.append('url', overrideUrl.value.trim());
     form.append('maxFrames', maxFramesInput.value);
+    form.append('evalEnabled', evalToggle && evalToggle.checked ? 'true' : 'false');
 
     fetch('/api/aggregation/generate', { method: 'POST', body: form })
       .then(function (r) { return r.json(); })
@@ -160,6 +177,7 @@
 
         showValidationBadge(data.isValid, data.issues || []);
         showTokenInfo(data.inputTokens, data.outputTokens, data.costUsd);
+        showConfidencePanel(data);
         unlockSection(sectionScript);
         setStatus('ready');
       })
@@ -688,6 +706,69 @@
                           + ' | Out: ' + (outputTok || 0).toLocaleString()
                           + ' | Cost: $' + (cost || 0).toFixed(4);
     tokenInfo.classList.remove('hidden');
+  }
+
+  // ── Confidence Panel ───────────────────────────────────────────────────────
+  function showConfidencePanel(data) {
+    if (!confidencePanel) return;
+    const score = typeof data.confidenceScore === 'number' ? data.confidenceScore : null;
+    const rec   = data.recommendation || null;
+    if (score === null && !rec) {
+      confidencePanel.classList.add('hidden');
+      return;
+    }
+
+    const CIRC = 194.8;
+    const s = Math.max(0, Math.min(100, score || 0));
+    const filled = (s / 100) * CIRC;
+    confidenceRingFill.setAttribute('stroke-dasharray', filled + ' ' + CIRC);
+    confidenceScoreNum.textContent = s;
+
+    const recUpper = (rec || '').toUpperCase();
+    confidencePanel.className = 'confidence-panel conf-' + recUpper.toLowerCase();
+    confidenceRingFill.setAttribute('class', 'conf-ring-fill conf-ring-' + recUpper.toLowerCase());
+
+    const recIcon = recUpper === 'TRUST' ? '✅' : recUpper === 'REVIEW' ? '⚠️' : '🚨';
+    confidenceRecBadge.textContent = recIcon + ' ' + recUpper;
+    confidenceRecBadge.className = 'confidence-rec-badge rec-' + recUpper.toLowerCase();
+
+    const reasoning = (data.confidenceReasoning || '').trim();
+    if (confidenceReasoning) {
+      if (reasoning) {
+        confidenceReasoning.textContent = reasoning;
+        confidenceReasoning.classList.remove('hidden');
+      } else if (recUpper === 'REVIEW') {
+        confidenceReasoning.textContent =
+          'Score is ' + s + ' (60–84) — review the script before running. '
+          + 'No specific structural issues were flagged.';
+        confidenceReasoning.classList.remove('hidden');
+      } else if (recUpper === 'CAUTION') {
+        confidenceReasoning.textContent =
+          'Score is ' + s + ' (<60) — treat this script as unreliable until manually verified.';
+        confidenceReasoning.classList.remove('hidden');
+      } else {
+        confidenceReasoning.textContent = '';
+        confidenceReasoning.classList.add('hidden');
+      }
+    }
+
+    confidenceWarningsList.innerHTML = '';
+    const warnings = data.confidenceWarnings || [];
+    if (warnings.length === 0 && recUpper === 'TRUST') {
+      const ok = document.createElement('span');
+      ok.className = 'confidence-ok-msg';
+      ok.textContent = 'No issues detected';
+      confidenceWarningsList.appendChild(ok);
+    } else {
+      warnings.forEach(function (w) {
+        const item = document.createElement('div');
+        item.className = 'confidence-warning-item';
+        item.textContent = w;
+        confidenceWarningsList.appendChild(item);
+      });
+    }
+
+    confidencePanel.classList.remove('hidden');
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

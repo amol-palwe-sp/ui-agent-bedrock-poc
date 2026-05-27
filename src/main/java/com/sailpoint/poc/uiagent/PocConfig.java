@@ -4,6 +4,7 @@ import com.sailpoint.poc.uiagent.config.AgentConfig;
 import com.sailpoint.poc.uiagent.config.AggregationConfig;
 import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.BrowserConfig;
+import com.sailpoint.poc.uiagent.config.ReplayConfig;
 import com.sailpoint.poc.uiagent.config.VideoConfig;
 
 import java.io.IOException;
@@ -177,6 +178,10 @@ public final class PocConfig {
     /** Returns the debug-frames directory path, or an empty string when disabled. */
     public String videoDebugFramesDir() {
         return optional("video.debug.frames.dir", "");
+    }
+
+    public String scriptOutputDir() {
+        return optional("script.output.dir", "./output/scripts");
     }
 
     public int videoGridSize() {
@@ -388,5 +393,47 @@ public final class PocConfig {
      */
     public AggregationConfig aggregation() {
         return new AggregationConfig(aggregationMaxPages(), aggregationOutputDir());
+    }
+
+    public int replayScrollSettleMs() {
+        return Integer.parseInt(optional("replay.scroll.settle.ms", "300"));
+    }
+
+    public int replayProgressiveScrollChunkPx() {
+        return Integer.parseInt(optional("replay.progressive.scroll.chunk.px", "400"));
+    }
+
+    public int replayProgressiveScrollMaxChunks() {
+        return Integer.parseInt(optional("replay.progressive.scroll.max.chunks", "15"));
+    }
+
+    public int replayProgressiveScrollChunkWaitMs() {
+        return Integer.parseInt(optional("replay.progressive.scroll.chunk.wait.ms", "250"));
+    }
+
+    /** Returns replay scroll / retag tuning as a single typed object (REQ-SIV-6). */
+    public ReplayConfig replay() {
+        return new ReplayConfig(
+                replayScrollSettleMs(),
+                replayProgressiveScrollChunkPx(),
+                replayProgressiveScrollMaxChunks(),
+                replayProgressiveScrollChunkWaitMs());
+    }
+
+    // ── Eval Framework ────────────────────────────────────────────────────────
+
+    /** Path to benchmarks.json. Default: {@code ./src/main/resources/eval/benchmarks.json}. */
+    public String evalBenchmarksPath() {
+        return optional("eval.benchmarks.path", "./src/main/resources/eval/benchmarks.json");
+    }
+
+    /** Directory where eval JSON reports are written. Default: {@code ./eval-reports}. */
+    public String evalOutputDir() {
+        return optional("eval.output.dir", "./eval-reports");
+    }
+
+    /** When true, the LLM judge step is skipped during eval runs. Default: {@code false}. */
+    public boolean evalSkipJudge() {
+        return Boolean.parseBoolean(optional("eval.skip.judge", "false"));
     }
 }

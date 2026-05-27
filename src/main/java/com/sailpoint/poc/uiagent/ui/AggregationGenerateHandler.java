@@ -4,6 +4,8 @@ import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
@@ -70,6 +72,7 @@ public final class AggregationGenerateHandler implements HttpHandler {
             byte[]  videoBytes  = null;
             String  overrideUrl = null;
             Integer maxFrames   = null;
+            boolean evalEnabled = true;
 
             for (FileItem item : items) {
                 if (!item.isFormField() && "video".equals(item.getFieldName())) {
@@ -83,11 +86,12 @@ public final class AggregationGenerateHandler implements HttpHandler {
                     videoBytes = item.get();
                 } else if (item.isFormField()) {
                     switch (item.getFieldName()) {
-                        case "url"       -> overrideUrl = item.getString().trim();
-                        case "maxFrames" -> {
+                        case "url"         -> overrideUrl = item.getString().trim();
+                        case "maxFrames"   -> {
                             try { maxFrames = Integer.parseInt(item.getString().trim()); }
                             catch (NumberFormatException ignored) {}
                         }
+                        case "evalEnabled" -> evalEnabled = !"false".equalsIgnoreCase(item.getString().trim());
                     }
                 }
             }
@@ -129,34 +133,44 @@ public final class AggregationGenerateHandler implements HttpHandler {
                             VideoAnalysisRequest.CredentialMode.PLACEHOLDER);
             VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
-            InvokeResult result;
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
                     config.bedrock().region(), config.bedrock().profile(),
                     config.bedrock().modelId(), config.bedrock().maxTokens(),
                     config.bedrock().temperature())) {
-                result = client.invokeWithMultipleImages(
+                InvokeResult result = client.invokeWithMultipleImages(
                         prompts.systemPrompt(), prompts.userPrompt(), frames);
-            }
 
-            push("LOG:SUCCESS:Claude responded — parsing navigation goal and pagination pattern...");
+                push("LOG:SUCCESS:Claude responded — parsing navigation goal and pagination pattern...");
 
-            VideoAnalysisResult analysis = VideoAnalysisResult.parse(result.text(), request);
+                VideoAnalysisResult analysis = VideoAnalysisResult.parse(result.text(), request);
 
-            if (!analysis.isValid()) {
-                push("LOG:ERROR:Parse failed: " + analysis.issues());
+                if (!analysis.isValid()) {
+                    push("LOG:ERROR:Parse failed: " + analysis.issues());
+                    push("STATUS:ready");
+                    String escaped = String.join("; ", analysis.issues())
+                            .replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+                    sendJson(ex, 500, "{\"error\":\"" + escaped + "\"}");
+                    return;
+                }
+
+                ConfidenceResult confidence = null;
+                if (evalEnabled) {
+                    push("LOG:INFO:Running real-time confidence evaluation...");
+                    confidence = ConfidenceEvaluator.evaluate(
+                            analysis, "AGGREGATION", "PLACEHOLDER", client);
+                    push("LOG:INFO:Confidence: " + confidence.confidenceScore()
+                            + " — " + confidence.recommendation());
+                } else {
+                    push("LOG:INFO:Confidence eval skipped (disabled by user)");
+                }
+
+                List<String> steps = analysis.steps();
+                push("LOG:INFO:Extracted " + steps.size() + " navigation step(s)");
                 push("STATUS:ready");
-                String escaped = String.join("; ", analysis.issues())
-                        .replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
-                sendJson(ex, 500, "{\"error\":\"" + escaped + "\"}");
-                return;
+
+                String json = buildResultJson(analysis, steps, result, frames.size(), confidence);
+                sendJson(ex, 200, json);
             }
-
-            List<String> steps = analysis.steps();
-            push("LOG:INFO:Extracted " + steps.size() + " navigation step(s)");
-            push("STATUS:ready");
-
-            String json = buildResultJson(analysis, steps, result, frames.size());
-            sendJson(ex, 200, json);
 
         } catch (Exception e) {
             push("LOG:ERROR:" + e.getMessage());
@@ -181,7 +195,8 @@ public final class AggregationGenerateHandler implements HttpHandler {
             VideoAnalysisResult analysis,
             List<String> steps,
             InvokeResult result,
-            int frameCount) {
+            int frameCount,
+            ConfidenceResult confidence) {
 
         PaginationPattern pp = analysis.paginationPattern() != null
                 ? analysis.paginationPattern()
@@ -197,7 +212,7 @@ public final class AggregationGenerateHandler implements HttpHandler {
             sb.append(quoted(steps.get(i)));
         }
         sb.append("]");
-        // Token definitions (new — REQ-1.2)
+        // Token definitions
         sb.append(",\"tokens\":[");
         for (int i = 0; i < analysis.tokens().size(); i++) {
             if (i > 0) sb.append(",");
@@ -224,6 +239,19 @@ public final class AggregationGenerateHandler implements HttpHandler {
         sb.append(",\"outputTokens\":").append(result.usage().outputTokens());
         sb.append(",\"costUsd\":").append(result.usage().totalCostUsd());
         sb.append(",\"frameCount\":").append(frameCount);
+        // Confidence evaluation
+        if (confidence != null) {
+            sb.append(",\"confidenceScore\":").append(confidence.confidenceScore());
+            sb.append(",\"recommendation\":").append(quoted(confidence.recommendation()));
+            sb.append(",\"confidenceReasoning\":").append(quoted(confidence.reasoning()));
+            sb.append(",\"confidenceWarnings\":[");
+            List<String> warnings = confidence.warnings();
+            for (int i = 0; i < warnings.size(); i++) {
+                if (i > 0) sb.append(",");
+                sb.append(quoted(warnings.get(i)));
+            }
+            sb.append("]");
+        }
         sb.append("}");
         return sb.toString();
     }

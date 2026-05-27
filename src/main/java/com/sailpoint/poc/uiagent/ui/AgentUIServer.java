@@ -27,6 +27,7 @@ public final class AgentUIServer {
     public static void main(String[] args) throws Exception {
         ServerState state = new ServerState();
         AggregationServerState aggregationState = new AggregationServerState();
+        EvalServerState evalState = new EvalServerState();
 
         HttpServer server = HttpServer.create(new InetSocketAddress(8080), 0);
         server.setExecutor(Executors.newCachedThreadPool());
@@ -44,12 +45,24 @@ public final class AgentUIServer {
         server.createContext("/aggregation.js",  new StaticHandler("aggregation.js",   "application/javascript"));
         server.createContext("/aggregation.css", new StaticHandler("aggregation.css",  "text/css"));
 
+        // Static assets — Eval tab
+        server.createContext("/eval",     new StaticHandler("eval.html", "text/html"));
+        server.createContext("/eval.js",  new StaticHandler("eval.js",   "application/javascript"));
+
         // API — Agent Run tab
         server.createContext("/api/stream",   new StreamHandler(state));
         server.createContext("/api/generate", new GenerateHandler(state));
         server.createContext("/api/run",      new RunHandler(state));
         server.createContext("/api/stop",     new RunHandler.StopHandler(state));
+        server.createContext("/api/scripts",  new ScriptsHandler());
         server.createContext("/api/status",   new StatusHandler(state));
+
+        // API — Eval tab
+        server.createContext("/api/eval/cases",   new EvalCasesHandler());
+        server.createContext("/api/eval/reports", new EvalReportHandler());
+        server.createContext("/api/eval/run",     new EvalRunHandler(evalState));
+        server.createContext("/api/eval/stop",    new EvalRunHandler.StopHandler(evalState));
+        server.createContext("/api/eval/stream",  new EvalStreamHandler(evalState));
 
         // API — Aggregation tab
         server.createContext("/api/aggregation/generate", new AggregationGenerateHandler(aggregationState));

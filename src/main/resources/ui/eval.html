@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval — UI Agent POC</title>
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <link rel="shortcut icon" type="image/png" href="/favicon.png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- ── NAVBAR ─────────────────────────────────────────────────────────── -->
+  <nav class="navbar">
+    <div class="navbar-brand">
+      <img src="/sailpoint.png" alt="SailPoint" height="32">
+      <span>UI Agent POC</span>
+    </div>
+    <div class="navbar-tabs">
+      <a href="/" class="nav-tab">Provisioning Settings</a>
+      <a href="/aggregation" class="nav-tab">Aggregation Settings</a>
+      <a href="/eval" class="nav-tab tab-active">Eval</a>
+    </div>
+    <div class="status-indicator">
+      <span class="status-dot status-ready"></span>
+      <span>Eval</span>
+    </div>
+  </nav>
+
+  <!-- ── MAIN ───────────────────────────────────────────────────────────── -->
+  <main class="container">
+
+    <!-- ── SECTION 1: HOW TO RUN ───────────────────────────────────────── -->
+    <section class="card" id="sectionHowTo">
+      <div class="card-header">
+        <span class="step-badge">1</span>
+        Run Benchmark Eval (CLI)
+      </div>
+      <div class="card-body">
+        <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 12px;">
+          The benchmark eval runs from the command line against 8 known video recordings with ground truth.
+          Reports are saved to the <code>./eval-reports/</code> directory and appear in the
+          <a href="#sectionReports" style="color: var(--action-blue)">Report History</a> section below.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Run all 8 cases:</label>
+          <div class="eval-run-box" id="cmdRunAll">./gradlew runEval</div>
+
+          <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Run a single case:</label>
+          <div class="eval-run-box">./gradlew runEval -Pargs="--case=eval_001"</div>
+
+          <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Skip LLM judge (faster, automated metrics only):</label>
+          <div class="eval-run-box">./gradlew runEval -Pargs="--skip-judge"</div>
+
+          <label style="font-size: 13px; font-weight: 600; color: var(--text-muted);">Custom output directory:</label>
+          <div class="eval-run-box">./gradlew runEval -Pargs="--output=./my-reports"</div>
+        </div>
+
+        <details style="margin-top: 16px;">
+          <summary style="cursor: pointer; font-size: 13px; color: var(--action-blue); font-weight: 600;">
+            What does each case cover?
+          </summary>
+          <table style="margin-top: 10px; width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead>
+              <tr>
+                <th style="text-align:left; padding: 6px 10px; background: #f0f4f8; border-bottom: 1px solid var(--border);">ID</th>
+                <th style="text-align:left; padding: 6px 10px; background: #f0f4f8; border-bottom: 1px solid var(--border);">Description</th>
+                <th style="text-align:left; padding: 6px 10px; background: #f0f4f8; border-bottom: 1px solid var(--border);">Type</th>
+                <th style="text-align:left; padding: 6px 10px; background: #f0f4f8; border-bottom: 1px solid var(--border);">Mode</th>
+              </tr>
+            </thead>
+            <tbody id="benchmarkCasesList">
+              <tr><td colspan="4" style="padding:8px 10px; color: var(--text-muted);">Loading…</td></tr>
+            </tbody>
+          </table>
+        </details>
+
+      </div>
+    </section>
+
+    <!-- ── SECTION 2: RUN EVAL ─────────────────────────────────────────── -->
+    <section class="card" id="sectionRun">
+      <div class="card-header">
+        <span class="step-badge">2</span>
+        Run Benchmark Eval
+        <div class="card-header-actions">
+          <span class="status-dot" id="evalStatusDot" style="width:10px;height:10px;"></span>
+          <span id="evalStatusText" style="font-size:13px; color: var(--text-muted);">Ready</span>
+        </div>
+      </div>
+      <div class="card-body">
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px;">
+
+          <!-- Case selector -->
+          <label style="display:flex; flex-direction:column; gap:6px; font-size:13px; font-weight:600;">
+            Case to run
+            <select id="evalCaseSelect" class="script-select" style="font-size:13px;">
+              <option value="">Loading cases…</option>
+            </select>
+          </label>
+
+          <!-- Options -->
+          <div style="display:flex; flex-direction:column; gap:10px; justify-content:flex-end;">
+            <label class="toggle-row" for="skipJudgeToggle" style="margin:0;">
+              <span class="toggle-switch">
+                <input type="checkbox" id="skipJudgeToggle">
+                <span class="toggle-track"></span>
+              </span>
+              <span class="toggle-label" style="font-size:13px;">Skip LLM Judge</span>
+              <span class="toggle-badge toggle-badge-off" id="skipJudgeBadge">OFF</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Progress bar -->
+        <div id="evalProgressWrap" class="hidden" style="margin-bottom:12px;">
+          <div style="display:flex; justify-content:space-between; font-size:12px; color:var(--text-muted); margin-bottom:4px;">
+            <span id="evalProgressLabel">Starting...</span>
+            <span id="evalProgressPct">0%</span>
+          </div>
+          <div style="height:6px; background:#e0e0e0; border-radius:3px; overflow:hidden;">
+            <div id="evalProgressBar" style="height:100%; background:var(--action-blue); border-radius:3px; width:0%; transition:width 0.3s ease;"></div>
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="action-row" style="gap:10px;">
+          <button class="btn btn-primary" id="btnRunEval">
+            <span id="btnRunEvalText">▶ Run Eval</span>
+            <span id="btnRunEvalSpinner" class="spinner hidden"></span>
+          </button>
+          <button class="btn btn-danger btn-sm hidden" id="btnStopEval">⏹ Stop</button>
+        </div>
+
+        <!-- Live log -->
+        <div id="evalLogPanel" class="log-panel" style="margin-top:16px; height:260px; display:none;">
+          <div class="log-placeholder">Eval log will appear here...</div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── SECTION 3: METRIC LEGEND ────────────────────────────────────── -->
+    <section class="card" id="sectionMetrics">
+      <div class="card-header">
+        <span class="step-badge">3</span>
+        Metric Reference
+      </div>
+      <div class="card-body">
+        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Step Recall <span style="color: var(--text-muted); font-weight: 400;">(30%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">GT steps found in output / total GT steps. Low = missing steps.</div>
+          </div>
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Step Precision <span style="color: var(--text-muted); font-weight: 400;">(20%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">Output steps matching GT / total output steps. Low = hallucinated steps.</div>
+          </div>
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Step Order <span style="color: var(--text-muted); font-weight: 400;">(15%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">Kendall Tau normalized. 1.0 = perfect order.</div>
+          </div>
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Label Accuracy <span style="color: var(--text-muted); font-weight: 400;">(15%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">Average fuzzy similarity between matched GT/output step pairs.</div>
+          </div>
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Placeholder <span style="color: var(--text-muted); font-weight: 400;">(10%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">1.0 if no credential leaks in PLACEHOLDER mode, else 0.0.</div>
+          </div>
+
+          <div style="border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <div style="font-weight: 600; margin-bottom: 4px;">Pagination <span style="color: var(--text-muted); font-weight: 400;">(10%)</span></div>
+            <div style="font-size: 13px; color: var(--text-muted);">Type + selector + description accuracy for AGGREGATION. 0 for PROVISIONING.</div>
+          </div>
+
+        </div>
+        <p style="font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+          <strong>Pass threshold:</strong> overall score ≥ 0.70 &nbsp;|&nbsp;
+          <strong>LLM judge scores:</strong> 0–10 (higher = better) &nbsp;|&nbsp;
+          <strong>Hallucination score:</strong> 10 = zero hallucinations
+        </p>
+      </div>
+    </section>
+
+    <!-- ── SECTION 4: REPORT HISTORY ────────────────────────────────────── -->
+    <section class="card" id="sectionReports">
+      <div class="card-header">
+        <span class="step-badge">4</span>
+        Report History
+        <div class="card-header-actions">
+          <button class="btn btn-ghost btn-sm" id="btnRefreshReports">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div id="reportsContainer">
+          <div class="log-placeholder">Loading reports…</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Toast container -->
+  <div id="toastContainer" class="toast-container"></div>
+
+  <script src="/eval.js"></script>
+</body>
+</html>

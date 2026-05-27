@@ -3,12 +3,8 @@ package com.sailpoint.poc.uiagent.video;
 /**
  * Single parameterized prompt builder for all video analysis tasks.
  *
- * <p>Implements REQ-2 (Unified Prompt). Replaces three separate prompt classes:
- * <ul>
- *   <li>{@link VideoToGoalPrompt} — provisioning (delegated from {@link #build} when provisioning)</li>
- *   <li>{@link com.sailpoint.poc.uiagent.aggregation.AggregationVideoPrompt} — aggregation CLI (LITERAL mode)</li>
- *   <li>{@link com.sailpoint.poc.uiagent.aggregation.AggregationVideoAnalysisPrompt} — aggregation web UI (PLACEHOLDER mode)</li>
- * </ul>
+ * <p>Implements REQ-2 (Unified Prompt). Provisioning delegates to {@link VideoToGoalPrompt};
+ * aggregation uses the JSON schema builders in this class (LITERAL and PLACEHOLDER modes).
  *
  * <h2>Usage</h2>
  * <pre>

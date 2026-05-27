@@ -21,6 +21,7 @@
     <div class="navbar-tabs">
       <a href="/" class="nav-tab">Provisioning Settings</a>
       <a href="/aggregation" class="nav-tab tab-active">Aggregation Settings</a>
+      <a href="/eval" class="nav-tab">Eval</a>
     </div>
     <div class="status-indicator">
       <span class="status-dot" id="statusDot"></span>
@@ -67,6 +68,16 @@
           </div>
         </details>
 
+        <label class="toggle-row" for="evalToggle">
+          <span class="toggle-switch">
+            <input type="checkbox" id="evalToggle" checked>
+            <span class="toggle-track"></span>
+          </span>
+          <span class="toggle-label">AI Confidence Eval</span>
+          <span class="toggle-sublabel">Runs an extra LLM call after generate to score output quality</span>
+          <span class="toggle-badge toggle-badge-on" id="evalToggleBadge">ON</span>
+        </label>
+
         <button class="btn btn-primary btn-lg" id="btnGenerate" disabled>
           <span id="btnGenerateText">▶ Generate Script</span>
           <span id="btnGenerateSpinner" class="spinner hidden"></span>
@@ -87,7 +98,31 @@
       </div>
       <div class="card-body">
 
-        <!-- PART A: Credential Placeholders -->
+        <!-- PART A: Confidence panel (shown after generate) -->
+        <div id="confidencePanel" class="confidence-panel hidden">
+          <div class="confidence-ring" id="confidenceRing">
+            <svg viewBox="0 0 76 76">
+              <circle class="conf-ring-bg"   cx="38" cy="38" r="31"></circle>
+              <circle class="conf-ring-fill" cx="38" cy="38" r="31"
+                      id="confidenceRingFill"
+                      stroke-dasharray="0 195"
+                      stroke-dashoffset="0"></circle>
+            </svg>
+            <span class="confidence-score-num" id="confidenceScoreNum">—</span>
+          </div>
+          <div class="confidence-details">
+            <div class="confidence-rec-row">
+              <span class="confidence-rec-badge" id="confidenceRecBadge">—</span>
+              <span class="confidence-label">AI Confidence Score</span>
+            </div>
+            <div id="confidenceWarningsWrap">
+              <div id="confidenceReasoning" class="confidence-reasoning hidden"></div>
+              <div id="confidenceWarningsList" class="confidence-warnings-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- PART B: Credential Placeholders -->
         <div id="placeholderSection" class="placeholder-section hidden">
           <div class="placeholder-header">
             <span class="placeholder-icon">🔑</span>

@@ -2,8 +2,12 @@ package com.sailpoint.poc.uiagent;
 
 import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
 import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineMode;
 import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
 import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
+
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Entry point for the UI Agent POC.
@@ -23,13 +27,17 @@ public final class UiAgentPocApplication {
             System.exit(1);
             return;
         }
-        if (!parsed.startUrl.startsWith("http://") && !parsed.startUrl.startsWith("https://")) {
+        if (parsed.mode != PipelineMode.LIST
+                && !parsed.startUrl.startsWith("http://") && !parsed.startUrl.startsWith("https://")) {
             System.err.println("ERROR: --url must start with http:// or https:// (got: " + parsed.startUrl + ")");
             System.exit(1);
             return;
         }
 
-        System.out.println("Goal (merged): " + parsed.goal);
+        if (parsed.mode != PipelineMode.LIST && parsed.mode != PipelineMode.REPLAY) {
+            System.out.println("Goal (merged): " + parsed.goal);
+        }
+        System.out.println("Mode: " + parsed.mode);
 
         PocConfig config  = new PocConfig();
         String    modelId = config.bedrockModelId();
@@ -55,9 +63,14 @@ public final class UiAgentPocApplication {
 
         // Build pipeline config — single source of truth for all resource setup (REQ-3)
         PipelineConfig pipelineConfig = PipelineConfig.builder()
+                .mode(parsed.mode)
                 .taskType(PipelineConfig.TaskType.PROVISIONING)
                 .startUrl(parsed.startUrl)
                 .goal(parsed.goal)
+                .scriptPath(parsed.scriptPath)
+                .scriptName(parsed.scriptName)
+                .saveScriptTo(config.scriptOutputDir())
+                .tokenValues(parsed.tokenValues)
                 .bedrockConfig(config.bedrock())
                 .browserConfig(config.browser())
                 .agentConfig(config.agent())
@@ -78,11 +91,20 @@ public final class UiAgentPocApplication {
                 """
                 UI Agent POC (Bedrock + Playwright)
 
-                Required:
+                Required (GENERATE / RECORD):
                   --url=<https://...>     Starting page (or: --url https://...)
-                  --goal=...              Goal text; any argv tokens after --goal= until the next --flag are appended
-                                          (fixes Gradle splitting: --goal=enter test@gmail.com ...)
-                  Or: --goal <words...>   Same merging rule (no = on --goal)
+                  --goal=...              Goal text; tokens after --goal= merge until next --flag
+
+                Modes (--mode=):
+                  GENERATE  Default — AgentLoop only (same as before)
+                  RECORD    AgentLoop + save script JSON on completion
+                  REPLAY    --script=<path.json> [--token=Name:value ...]
+                  LIST      List scripts in script.output.dir
+
+                Examples:
+                  --mode=RECORD --url=... --goal=...
+                  --mode=REPLAY --script=./output/scripts/foo.json --token=Email:user@corp.com
+                  --mode=LIST
 
                 Configuration: src/main/resources/application.properties
                   (see application.properties.example)
@@ -95,13 +117,41 @@ public final class UiAgentPocApplication {
                 """);
     }
 
-    private record ParsedArgs(String startUrl, String goal) {
+    private record ParsedArgs(
+            PipelineMode mode,
+            String startUrl,
+            String goal,
+            String scriptPath,
+            String scriptName,
+            Map<String, String> tokenValues) {
+
         static ParsedArgs parse(String[] args) {
-            String url  = null;
-            String goal = null;
+            String url  = "https://example.com";
+            String goal = "";
+            PipelineMode mode = PipelineMode.GENERATE;
+            String scriptPath = "";
+            String scriptName = "";
+            Map<String, String> tokens = new HashMap<>();
 
             for (int i = 0; i < args.length; i++) {
                 String a = args[i];
+                if (a.startsWith("--mode=")) {
+                    mode = PipelineMode.valueOf(a.substring("--mode=".length()).trim().toUpperCase());
+                } else if ("--mode".equals(a) && i + 1 < args.length) {
+                    mode = PipelineMode.valueOf(args[++i].trim().toUpperCase());
+                } else if (a.startsWith("--script=")) {
+                    scriptPath = a.substring("--script=".length()).trim();
+                } else if ("--script".equals(a) && i + 1 < args.length) {
+                    scriptPath = args[++i].trim();
+                } else if (a.startsWith("--script-name=")) {
+                    scriptName = a.substring("--script-name=".length()).trim();
+                } else if (a.startsWith("--token=")) {
+                    String pair = a.substring("--token=".length());
+                    int colon = pair.indexOf(':');
+                    if (colon > 0) {
+                        tokens.put(pair.substring(0, colon).trim(), pair.substring(colon + 1).trim());
+                    }
+                }
                 if (a.startsWith("--url=")) {
                     url = a.substring("--url=".length()).trim();
                 } else if ("--url".equals(a) && i + 1 < args.length && !isOptionPrefix(args[i + 1])) {
@@ -119,7 +169,7 @@ public final class UiAgentPocApplication {
                 }
             }
             if (url == null || url.isBlank() || goal == null || goal.isBlank()) return null;
-            return new ParsedArgs(url, goal);
+            return new ParsedArgs(mode, url, goal, scriptPath, scriptName, tokens);
         }
 
         private static int appendMergedWords(String[] args, int goalArgIndex, StringBuilder out) {

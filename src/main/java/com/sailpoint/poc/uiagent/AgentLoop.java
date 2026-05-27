@@ -3,6 +3,7 @@ package com.sailpoint.poc.uiagent;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
+import com.sailpoint.poc.uiagent.replay.ScriptRecorder;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -36,8 +37,7 @@ public final class AgentLoop {
             - The current page URL.
             - A numbered list of interactable elements (each with [id], tag, role, type, name,
               placeholder, current value, visible label, and — for <select> — its options).
-              The id is stable for THIS observation only; it changes after the page navigates
-              or re-renders.
+              Each id is a stable fingerprint hash (same control → same id across observations).
             - A viewport screenshot of the page (when visual state may have changed). On
               new pages or after navigation you may receive MULTIPLE images — vertical tiles
               of the SAME page from top to bottom. Use them together to understand the full
@@ -53,9 +53,9 @@ public final class AgentLoop {
               "goal_achieved": false,
               "actions": [
                 { "type": "GOTO",         "url": "https://..." },
-                { "type": "CLICK",        "element_id": 0 },
-                { "type": "TYPE",         "element_id": 1, "text": "literal text to type" },
-                { "type": "SELECT_OPTION","element_id": 2, "label": "Alaska" },
+                { "type": "CLICK",        "element_id": "a3f8b2c1" },
+                { "type": "TYPE",         "element_id": "b1c2d3e4", "text": "literal text to type" },
+                { "type": "SELECT_OPTION","element_id": "c4d5e6f7", "label": "Alaska" },
                 { "type": "KEYPRESS",     "key": "Enter" },
                 { "type": "SCROLL",       "direction": "down", "amount": 600 },
                 { "type": "HOVER",        "element_id": 3 },
@@ -151,6 +151,7 @@ public final class AgentLoop {
      * Callers opt in via {@link #setMultiViewportMaxFrames(int)}.
      */
     private int multiViewportMaxFrames = 1;
+    private ScriptRecorder scriptRecorder;
 
     public AgentLoop(
             BedrockAnthropicClient bedrock,
@@ -175,6 +176,16 @@ public final class AgentLoop {
     public AgentLoop setMultiViewportMaxFrames(int maxFrames) {
         this.multiViewportMaxFrames = Math.max(1, maxFrames);
         return this;
+    }
+
+    /** Enables RECORD mode — successful actions are appended to the script. */
+    public AgentLoop enableRecording(ScriptRecorder recorder) {
+        this.scriptRecorder = recorder;
+        return this;
+    }
+
+    public ScriptRecorder scriptRecorder() {
+        return scriptRecorder;
     }
 
     public TokenUsage run() throws Exception {
@@ -434,12 +445,12 @@ public final class AgentLoop {
             // Bug 1: Per-element repeat-loop guard.
             // If the same action+element succeeds more than MAX_SAME_ACTION_REPEATS times
             // across the entire run, the agent is in a loop. Inject a history hint and stop.
-            int elementId = a.optInt("element_id", -1);
+            String elementId = elementIdFromAction(a);
             String actionKey = type + ":" + elementId;
             int priorRepeats = actionRepeatCounts.getOrDefault(actionKey, 0);
             if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type) && priorRepeats >= MAX_SAME_ACTION_REPEATS) {
                 String loopMsg = "s" + step + ": LOOP DETECTED — " + type
-                        + (elementId >= 0 ? " id=" + elementId : "")
+                        + (!elementId.isBlank() ? " id=" + elementId : "")
                         + " already done " + priorRepeats + "x — move on to the next step";
                 System.out.println("  [Loop Guard] " + loopMsg);
                 addHistory(history, loopMsg);
@@ -461,19 +472,22 @@ public final class AgentLoop {
             long elapsedMs = System.currentTimeMillis() - t0;
 
             System.out.println("  result: " + result);
-            actionLogger.log(step, i, type, elementId, result, browser.currentUrl(), elapsedMs);
+            actionLogger.log(step, i, type,
+                    elementId.isBlank() ? null : elementId,
+                    result, browser.currentUrl(), elapsedMs);
 
             boolean ok = result.optBoolean("ok", false);
             if (ok) {
                 hadSuccess = true;
-                // Increment repeat counter only on success — failed actions shouldn't count.
-                // SCROLL, WAIT, and RELOAD_PAGE are excluded: they have no meaningful element_id
-                // so their key is always the same, causing false loop detection on long forms.
                 if (!LOOP_GUARD_EXCLUDED_TYPES.contains(type)) {
                     actionRepeatCounts.put(actionKey, priorRepeats + 1);
                 }
-
-                // Bug 4: Log key successes so the LLM knows they're already done.
+                if (scriptRecorder != null && !elementId.isBlank()) {
+                    JSONObject meta = browser.findElementMeta(elementId);
+                    scriptRecorder.recordSuccess(type, a, meta, browser.currentUrl());
+                } else if (scriptRecorder != null && "GOTO".equals(type)) {
+                    scriptRecorder.recordSuccess(type, a, null, browser.currentUrl());
+                }
                 if (HISTORY_WORTHY_TYPES.contains(type)) {
                     addHistory(history, "s" + step + ": " + summarize(result, a));
                 }
@@ -509,24 +523,24 @@ public final class AgentLoop {
                 yield ok("goto");
             }
             case "CLICK" -> {
-                int id = a.optInt("element_id", -1);
+                String id = elementIdFromAction(a);
                 System.out.println("ACTION CLICK element_id=" + id);
-                yield browser.clickByElementId(id);
+                yield browser.clickByStableId(id);
             }
             case "TYPE" -> {
-                int    id   = a.optInt("element_id", -1);
+                String id   = elementIdFromAction(a);
                 String text = a.optString("text", "");
                 System.out.println("ACTION TYPE element_id=" + id
                         + " text=\"" + previewText(text) + "\"");
-                yield browser.typeByElementId(id, text);
+                yield browser.typeByStableId(id, text);
             }
             case "SELECT_OPTION" -> {
-                int    id    = a.optInt("element_id", -1);
+                String id    = elementIdFromAction(a);
                 String value = a.optString("value", "");
                 String label = a.optString("label", "");
                 System.out.println("ACTION SELECT_OPTION element_id=" + id
                         + " label=\"" + label + "\" value=\"" + value + "\"");
-                yield browser.selectOptionByElementId(id, value, label);
+                yield browser.selectOptionByStableId(id, value, label);
             }
             case "KEYPRESS" -> {
                 String key = a.optString("key", "");
@@ -540,15 +554,15 @@ public final class AgentLoop {
                 yield browser.scroll(dir, amount);
             }
             case "HOVER" -> {
-                int id = a.optInt("element_id", -1);
+                String id = elementIdFromAction(a);
                 System.out.println("ACTION HOVER element_id=" + id);
-                yield browser.hoverByElementId(id);
+                yield browser.hoverByStableId(id);
             }
             case "CHECK" -> {
-                int     id      = a.optInt("element_id", -1);
+                String  id      = elementIdFromAction(a);
                 boolean checked = a.optBoolean("checked", true);
                 System.out.println("ACTION CHECK element_id=" + id + " checked=" + checked);
-                yield browser.checkboxByElementId(id, checked);
+                yield browser.checkboxByStableId(id, checked);
             }
             case "RELOAD_PAGE" -> {
                 System.out.println("ACTION RELOAD_PAGE");
@@ -613,11 +627,22 @@ public final class AgentLoop {
         }
     }
 
+    private static String elementIdFromAction(JSONObject action) {
+        if (!action.has("element_id") || action.isNull("element_id")) {
+            return "";
+        }
+        Object raw = action.get("element_id");
+        if (raw instanceof Number n) {
+            return String.valueOf(n.intValue());
+        }
+        return action.optString("element_id", "").trim();
+    }
+
     private static String summarize(JSONObject result, JSONObject action) {
         String type = action.optString("type", "").toUpperCase();
         if (result.optBoolean("ok", false)) {
-            String idPart = action.has("element_id")
-                    ? " id=" + action.optInt("element_id") : "";
+            String eid = elementIdFromAction(action);
+            String idPart = !eid.isBlank() ? " id=" + eid : "";
             String extra = switch (type) {
                 case "GOTO"    -> " " + trimUrl(action.optString("url"), 40);
                 case "TYPE"    -> idPart + " \"" + previewText(action.optString("text"), 20) + "\"";
@@ -629,7 +654,8 @@ public final class AgentLoop {
             };
             return type + extra + " ✓";
         }
-        String idPart = action.has("element_id") ? " id=" + action.optInt("element_id") : "";
+        String eid = elementIdFromAction(action);
+        String idPart = !eid.isBlank() ? " id=" + eid : "";
         String err    = firstLine(result.optString("err", "failed"));
         return type + idPart + " ✗ " + err;
     }

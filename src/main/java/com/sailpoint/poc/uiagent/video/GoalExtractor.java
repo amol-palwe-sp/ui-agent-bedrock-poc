@@ -157,4 +157,41 @@ public final class GoalExtractor {
         boolean isValid = issues.isEmpty();
         return new ExtractionResult(goalLine, url, steps, isValid, issues);
     }
+
+    /**
+     * Builds the best available navigation goal string for confidence evaluation when
+     * strict validation failed or steps are empty. Prefers parsed steps, then {@code --goal=}
+     * content from a partial goal line, then a truncated raw Claude response.
+     */
+    public static String bestEffortNavigationGoal(String rawResponse, ExtractionResult extraction) {
+        if (!extraction.steps().isEmpty()) {
+            return String.join(", then ", extraction.steps());
+        }
+        String goalLine = extraction.goalLine();
+        if (goalLine != null && !goalLine.isBlank()) {
+            Matcher goalMatcher = GOAL_PATTERN.matcher(goalLine);
+            if (goalMatcher.find()) {
+                return goalMatcher.group(1).trim();
+            }
+            int goalIdx = goalLine.indexOf("--goal=");
+            if (goalIdx >= 0) {
+                String rest = goalLine.substring(goalIdx + 7).trim();
+                if (rest.startsWith("'")) {
+                    rest = rest.substring(1);
+                }
+                int end = rest.lastIndexOf('\'');
+                if (end > 0) {
+                    rest = rest.substring(0, end);
+                }
+                if (!rest.isBlank()) {
+                    return rest.trim();
+                }
+            }
+        }
+        if (rawResponse != null && !rawResponse.isBlank()) {
+            String snippet = rawResponse.trim();
+            return snippet.length() > 4000 ? snippet.substring(0, 4000) : snippet;
+        }
+        return "";
+    }
 }

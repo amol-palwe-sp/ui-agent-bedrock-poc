@@ -10,6 +10,7 @@
   let eventSource     = null;
   let isGenerating    = false;
   let isRunning       = false;
+  let cachedScripts   = [];
 
   // ── Element refs ───────────────────────────────────────────────────────────
   const dropZone               = document.getElementById('dropZone');
@@ -36,6 +37,12 @@
   const tokenInfo              = document.getElementById('tokenInfo');
   const execTokenInfo          = document.getElementById('execTokenInfo');
   const btnRun                 = document.getElementById('btnRun');
+  const btnRunText             = document.getElementById('btnRunText');
+  const runModeSection         = document.getElementById('runModeSection');
+  const replayPanel            = document.getElementById('replayPanel');
+  const scriptSelect           = document.getElementById('scriptSelect');
+  const scriptMeta             = document.getElementById('scriptMeta');
+  const btnRefreshScripts      = document.getElementById('btnRefreshScripts');
   const sectionLog             = document.getElementById('sectionLog');
   const logPanel               = document.getElementById('logPanel');
   const btnStop                = document.getElementById('btnStop');
@@ -46,16 +53,33 @@
   const warningText            = document.getElementById('warningText');
   const btnContinueAnyway      = document.getElementById('btnContinueAnyway');
   const btnGoBack              = document.getElementById('btnGoBack');
+  const confidencePanel        = document.getElementById('confidencePanel');
+  const confidenceRingFill     = document.getElementById('confidenceRingFill');
+  const confidenceScoreNum     = document.getElementById('confidenceScoreNum');
+  const confidenceRecBadge     = document.getElementById('confidenceRecBadge');
+  const confidenceReasoning    = document.getElementById('confidenceReasoning');
+  const confidenceWarningsList = document.getElementById('confidenceWarningsList');
+  const evalToggle             = document.getElementById('evalToggle');
+  const evalToggleBadge        = document.getElementById('evalToggleBadge');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
     initDropZone();
     initSSE();
+    initRunMode();
     setStatus('ready');
 
     btnGenerate.addEventListener('click', handleGenerate);
     btnRun.addEventListener('click', handleRun);
     btnStop.addEventListener('click', handleStop);
+    if (evalToggle) {
+      evalToggle.addEventListener('change', function () {
+        var on = evalToggle.checked;
+        evalToggleBadge.textContent = on ? 'ON' : 'OFF';
+        evalToggleBadge.className = 'toggle-badge ' + (on ? 'toggle-badge-on' : 'toggle-badge-off');
+        if (!on && confidencePanel) confidencePanel.classList.add('hidden');
+      });
+    }
     btnCopy.addEventListener('click', handleCopy);
     btnAddStep.addEventListener('click', function () { addStep(''); });
     btnContinueAnyway.addEventListener('click', function () {
@@ -115,6 +139,7 @@
     if (overrideUrl.value.trim()) form.append('url', overrideUrl.value.trim());
     form.append('maxFrames', maxFramesInput.value);
     if (saveDebugFrames.checked) form.append('debugFrames', 'true');
+    form.append('evalEnabled', evalToggle && evalToggle.checked ? 'true' : 'false');
 
     fetch('/api/generate', { method: 'POST', body: form })
       .then(function (r) { return r.json(); })
@@ -124,12 +149,22 @@
           setStatus('error');
           return;
         }
-        generatedUrl = data.url || '';
+        generatedUrl = (data.url && data.url.trim())
+            || (data.targetUrl && data.targetUrl.trim())
+            || overrideUrl.value.trim();
 
-        // Tokenize steps and extract placeholders
-        const rawSteps = (data.steps || []).filter(function (s) {
+        // Tokenize steps and extract placeholders (fall back to navigationGoal when parse failed)
+        let rawSteps = (data.steps || []).filter(function (s) {
           return !s.toLowerCase().includes('do not perform any further actions');
         });
+        if (rawSteps.length === 0 && data.navigationGoal) {
+          rawSteps = data.navigationGoal.split(/\s*,\s*then\s+/i).map(function (s) {
+            return s.trim();
+          }).filter(function (s) {
+            return s.length > 0
+                && !s.toLowerCase().includes('do not perform any further actions');
+          });
+        }
         const extracted = extractPlaceholders(rawSteps);
         generatedSteps = extracted.tokenizedSteps;
         placeholders   = extracted.placeholders;
@@ -140,7 +175,10 @@
 
         showValidationBadge(data.isValid, data.issues || []);
         showTokenInfo(data.inputTokens, data.outputTokens, data.costUsd);
+        showConfidencePanel(data);
         unlockSection(sectionScript);
+        loadScripts();
+        updateRunModeUI();
         setStatus('ready');
       })
       .catch(function (err) {
@@ -392,8 +430,8 @@
     const active = substituted.filter(function (s) { return s.trim().length > 0; });
     if (active.length === 0) {
       commandBox.textContent = '';
-      btnRun.disabled = true;
       updateStepsSummary(0);
+      updateRunButton();
       return;
     }
 
@@ -402,9 +440,139 @@
     const goalLine   = "./gradlew run --args='--url=" + (generatedUrl || 'https://example.com')
                      + " --goal=" + goalString + "'";
     commandBox.textContent = goalLine;
-    btnRun.disabled = isRunning;
     updateStepsSummary(active.length);
     revalidateClient();
+    updateRunButton();
+  }
+
+  // ── Run mode (Run / Record / Replay) ───────────────────────────────────────
+  function initRunMode() {
+    if (!runModeSection) return;
+
+    runModeSection.querySelectorAll('input[name="runMode"]').forEach(function (radio) {
+      radio.addEventListener('change', updateRunModeUI);
+    });
+
+    if (scriptSelect) {
+      scriptSelect.addEventListener('change', function () {
+        renderScriptMeta();
+        updateRunButton();
+      });
+    }
+
+    if (btnRefreshScripts) {
+      btnRefreshScripts.addEventListener('click', function () { loadScripts(true); });
+    }
+
+    updateRunModeUI();
+  }
+
+  function getRunMode() {
+    const checked = document.querySelector('input[name="runMode"]:checked');
+    return checked ? checked.value : 'RUN';
+  }
+
+  function updateRunModeUI() {
+    const mode = getRunMode();
+    if (replayPanel) {
+      replayPanel.classList.toggle('hidden', mode !== 'REPLAY');
+    }
+    if (btnRunText) {
+      if (mode === 'RECORD') {
+        btnRunText.textContent = '▶ Record Script';
+      } else if (mode === 'REPLAY') {
+        btnRunText.textContent = '▶ Replay Script';
+      } else {
+        btnRunText.textContent = '▶ Run Script';
+      }
+    }
+    if (mode === 'REPLAY') {
+      loadScripts();
+    }
+    updateRunButton();
+  }
+
+  function updateRunButton() {
+    if (isRunning) {
+      btnRun.disabled = true;
+      return;
+    }
+    if (getRunMode() === 'REPLAY') {
+      btnRun.disabled = !scriptSelect || !scriptSelect.value;
+      return;
+    }
+    const cmd = commandBox.textContent.trim();
+    btnRun.disabled = !cmd;
+  }
+
+  function loadScripts(showToastOnEmpty) {
+    if (!scriptSelect) return Promise.resolve();
+
+    const prev = scriptSelect.value;
+    return fetch('/api/scripts')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) {
+          showError(data.error);
+          return;
+        }
+        cachedScripts = data.scripts || [];
+        scriptSelect.innerHTML = '<option value="">— Select a script —</option>';
+        cachedScripts.forEach(function (s) {
+          const opt = document.createElement('option');
+          opt.value = s.path;
+          const label = (s.scriptName || s.name || 'script')
+            + ' (' + (s.steps != null ? s.steps : '?') + ' steps'
+            + (s.health != null ? ', health ' + s.health : '') + ')';
+          opt.textContent = label;
+          scriptSelect.appendChild(opt);
+        });
+        if (prev && cachedScripts.some(function (s) { return s.path === prev; })) {
+          scriptSelect.value = prev;
+        }
+        renderScriptMeta();
+        updateRunButton();
+        if (showToastOnEmpty && cachedScripts.length === 0) {
+          const hint = 'No saved scripts in ' + (data.dir || './output/scripts')
+            + '. Run Record mode first.';
+          if (scriptMeta) scriptMeta.textContent = hint;
+        }
+      })
+      .catch(function (err) { showError(err.message); });
+  }
+
+  function renderScriptMeta() {
+    if (!scriptMeta || !scriptSelect) return;
+    const path = scriptSelect.value;
+    if (!path) {
+      scriptMeta.textContent = 'Choose a script recorded earlier. Token values above apply to TYPE steps.';
+      return;
+    }
+    const s = cachedScripts.find(function (x) { return x.path === path; });
+    if (!s) {
+      scriptMeta.textContent = path;
+      return;
+    }
+    if (s.parseError) {
+      scriptMeta.textContent = 'Could not parse script: ' + s.parseError;
+      return;
+    }
+    const goalSnippet = (s.goal || '').length > 100
+      ? s.goal.substring(0, 100) + '…'
+      : (s.goal || '');
+    scriptMeta.textContent = (s.steps || 0) + ' steps · health '
+      + (s.health != null ? s.health : '—')
+      + (s.startUrl ? ' · ' + s.startUrl : '')
+      + (goalSnippet ? ' · ' + goalSnippet : '');
+  }
+
+  function buildTokenValues() {
+    const out = {};
+    placeholders.forEach(function (ph) {
+      const key = ph.token.replace(/^\{|\}$/g, '');
+      if (key) out[key] = ph.currentValue;
+    });
+    return out;
   }
 
   function updateStepsSummary(count) {
@@ -499,8 +667,23 @@
   }
 
   function doRun() {
-    const goalLine = commandBox.textContent.trim();
-    if (!goalLine) return;
+    const mode = getRunMode();
+    const payload = {
+      mode: mode,
+      tokenValues: buildTokenValues()
+    };
+
+    if (mode === 'REPLAY') {
+      payload.scriptPath = scriptSelect ? scriptSelect.value : '';
+      if (!payload.scriptPath) {
+        showError('Select a saved script to replay.');
+        return;
+      }
+    } else {
+      const goalLine = commandBox.textContent.trim();
+      if (!goalLine) return;
+      payload.goalLine = goalLine;
+    }
 
     isRunning = true;
     setStatus('running');
@@ -515,7 +698,7 @@
     fetch('/api/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ goalLine: goalLine })
+      body: JSON.stringify(payload)
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -538,9 +721,9 @@
 
   function resetRunState() {
     isRunning = false;
-    btnRun.disabled = false;
     btnStop.classList.add('hidden');
     setStatus('ready');
+    updateRunButton();
   }
 
   // ── SSE ────────────────────────────────────────────────────────────────────
@@ -559,7 +742,12 @@
         case 'log':         appendLog(data.text, data.level);                                  break;
         case 'status':      setStatus(data.value);                                             break;
         case 'progress':    updateProgress(data);                                              break;
-        case 'done':        handleDone(data.exitCode);                                         break;
+        case 'done':
+          // Generate uses fetch; DONE events are for script run/replay only.
+          if (!isGenerating) {
+            handleDone(data.exitCode);
+          }
+          break;
         case 'error':       showError(data.message);                                           break;
         case 'token_usage': showExecTokenInfo(data.inputTokens, data.outputTokens, data.costUsd); break;
       }
@@ -584,6 +772,19 @@
     line.textContent = '[' + time + '] ' + (text || '');
     logPanel.appendChild(line);
     logPanel.scrollTop = logPanel.scrollHeight;
+
+    if (text && text.indexOf('Script saved to') >= 0) {
+      showToast('Script saved — refresh replay list to use it.');
+      loadScripts();
+    }
+  }
+
+  function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast toast-success';
+    toast.textContent = msg;
+    toastContainer.appendChild(toast);
+    setTimeout(function () { toast.remove(); }, 6000);
   }
 
   function updateProgress(data) {
@@ -598,6 +799,9 @@
     resetRunState();
     if (exitCode === 0) {
       appendLog('Completed successfully', 'success');
+      if (getRunMode() === 'RECORD') {
+        loadScripts();
+      }
     } else {
       appendLog('Finished with errors', 'error');
     }
@@ -624,6 +828,74 @@
       btnCopy.textContent = '✅ Copied!';
       setTimeout(function () { btnCopy.textContent = '📋 Copy'; }, 2000);
     });
+  }
+
+  // ── Confidence Panel ───────────────────────────────────────────────────────
+  function showConfidencePanel(data) {
+    if (!confidencePanel) return;
+    const score = typeof data.confidenceScore === 'number' ? data.confidenceScore : null;
+    const rec   = data.recommendation || null;
+    if (score === null && !rec) {
+      confidencePanel.classList.add('hidden');
+      return;
+    }
+
+    // Score ring: circumference ≈ 2πr = 2π×31 ≈ 194.8
+    const CIRC = 194.8;
+    const s = Math.max(0, Math.min(100, score || 0));
+    const filled = (s / 100) * CIRC;
+    confidenceRingFill.setAttribute('stroke-dasharray', filled + ' ' + CIRC);
+    confidenceScoreNum.textContent = s;
+
+    // Color class
+    const recUpper = (rec || '').toUpperCase();
+    confidencePanel.className = 'confidence-panel conf-' + recUpper.toLowerCase();
+    confidenceRingFill.setAttribute('class', 'conf-ring-fill conf-ring-' + recUpper.toLowerCase());
+
+    // Recommendation badge
+    const recIcon = recUpper === 'TRUST' ? '✅' : recUpper === 'REVIEW' ? '⚠️' : '🚨';
+    confidenceRecBadge.textContent = recIcon + ' ' + recUpper;
+    confidenceRecBadge.className = 'confidence-rec-badge rec-' + recUpper.toLowerCase();
+
+    // Judge reasoning (why this score / recommendation)
+    const reasoning = (data.confidenceReasoning || '').trim();
+    if (confidenceReasoning) {
+      if (reasoning) {
+        confidenceReasoning.textContent = reasoning;
+        confidenceReasoning.classList.remove('hidden');
+      } else if (recUpper === 'REVIEW') {
+        confidenceReasoning.textContent =
+          'Score is ' + s + ' (60–84) — review the script before running. '
+          + 'No specific structural issues were flagged.';
+        confidenceReasoning.classList.remove('hidden');
+      } else if (recUpper === 'CAUTION') {
+        confidenceReasoning.textContent =
+          'Score is ' + s + ' (<60) — treat this script as unreliable until manually verified.';
+        confidenceReasoning.classList.remove('hidden');
+      } else {
+        confidenceReasoning.textContent = '';
+        confidenceReasoning.classList.add('hidden');
+      }
+    }
+
+    // Structural warnings (pre-checks + goal format)
+    confidenceWarningsList.innerHTML = '';
+    const warnings = data.confidenceWarnings || [];
+    if (warnings.length === 0 && recUpper === 'TRUST') {
+      const ok = document.createElement('span');
+      ok.className = 'confidence-ok-msg';
+      ok.textContent = 'No issues detected';
+      confidenceWarningsList.appendChild(ok);
+    } else {
+      warnings.forEach(function (w) {
+        const item = document.createElement('div');
+        item.className = 'confidence-warning-item';
+        item.textContent = w;
+        confidenceWarningsList.appendChild(item);
+      });
+    }
+
+    confidencePanel.classList.remove('hidden');
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────────

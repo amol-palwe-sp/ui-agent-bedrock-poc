@@ -625,14 +625,19 @@ public final class AccountAggregator {
                 return false;
             }
 
-            int elementId = parsed.optInt("element_id", -1);
-            if (elementId < 0) {
+            String elementId;
+            if (elementIdObj instanceof Number n) {
+                elementId = String.valueOf(n.intValue());
+            } else {
+                elementId = parsed.optString("element_id", "").trim();
+            }
+            if (elementId.isBlank()) {
                 System.out.println("  [Next] Claude returned invalid element_id — stopping.");
                 return false;
             }
 
-            System.out.printf("Navigating to page %d via element_id=%d...%n", currentPage + 1, elementId);
-            browser.clickByElementId(elementId);
+            System.out.printf("Navigating to page %d via element_id=%s...%n", currentPage + 1, elementId);
+            browser.clickByStableId(elementId);
             settleAfterPageChange();
             return true;
 

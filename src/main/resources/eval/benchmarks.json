@@ -1,0 +1,237 @@
+{
+  "benchmarks": [
+    {
+      "id": "eval_001",
+      "description": "Coupa UAT - Create new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Coupa_CreateUser.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Username or Email Address field, then click Next button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Create button, then enter \"{Login}\" in the Login field, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{Email2}\" in the Email field, then check the \"{AIClassifierCheckbox}\" checkbox, then check the \"{AnalyticsAdminCheckbox}\" checkbox, then select \"{Designation}\" from the Designation dropdown, then click Create button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Username or Email Address field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign In button",
+          "click Create button",
+          "enter \"{Login}\" in the Login field",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{Email2}\" in the Email field",
+          "check the \"{AIClassifierCheckbox}\" checkbox",
+          "check the \"{AnalyticsAdminCheckbox}\" checkbox",
+          "select \"{Designation}\" from the Designation dropdown",
+          "click Create button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",                  "label": "Username or Email Address field", "type": "email"    },
+          { "name": "Password",               "label": "Password field",                  "type": "password" },
+          { "name": "Login",                  "label": "Login field",                     "type": "text"     },
+          { "name": "FirstName",              "label": "First name field",                "type": "text"     },
+          { "name": "LastName",               "label": "Last name field",                 "type": "text"     },
+          { "name": "Email2",                 "label": "Email field",                     "type": "email"    },
+          { "name": "AIClassifierCheckbox",   "label": "AI Classifier checkbox",          "type": "text"     },
+          { "name": "AnalyticsAdminCheckbox", "label": "Analytics Admin checkbox",        "type": "text"     },
+          { "name": "Designation",            "label": "Designation dropdown",            "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_002",
+      "description": "Windows Calculator - Scientific mode sin calculation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Calculator.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click View menu, then click Scientific option, then click 3 button, then click 0 button, then click sin button, then click = button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "click View menu",
+          "click Scientific option",
+          "click 3 button",
+          "click 0 button",
+          "click sin button",
+          "click = button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "eval_003",
+      "description": "Google Admin - Add new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_CreateUser.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add new user link, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{PrimaryEmail}\" in the Primary email field, then click ADD NEW USER button, then click DONE button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email or phone field",
+          "click Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click Next button",
+          "click Add new user link",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{PrimaryEmail}\" in the Primary email field",
+          "click ADD NEW USER button",
+          "click DONE button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",        "label": "Email or phone field",        "type": "email"    },
+          { "name": "Password",     "label": "Enter your password field",   "type": "password" },
+          { "name": "FirstName",    "label": "First name field",            "type": "text"     },
+          { "name": "LastName",     "label": "Last name field",             "type": "text"     },
+          { "name": "PrimaryEmail", "label": "Primary email field",         "type": "email"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_004",
+      "description": "Google Admin - Reactivate user workflow",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_EnableUser.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add a filter, then enter \"{Filter}\" in the filter field, then click First name starts with \"{Filter}\" option, then click Anand Joshi link, then click REACTIVATE, then click REACTIVATE button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email or phone field",
+          "click Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click Next button",
+          "click Add a filter",
+          "enter \"{Filter}\" in the filter field",
+          "click First name starts with \"{Filter}\" option",
+          "click Anand Joshi link",
+          "click REACTIVATE",
+          "click REACTIVATE button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email or phone field",      "type": "email"    },
+          { "name": "Password", "label": "Enter your password field", "type": "password" },
+          { "name": "Filter",   "label": "filter field",              "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_005",
+      "description": "Generic system - Create new user with username and description",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/LocalUserCreate01.mp4",
+      "targetUrl": "https://example.com",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click Users link, then click Action, then click New User..., then enter \"{Name}\" in the User name field, then enter \"{Name2}\" in the Full name field, then enter \"{Description}\" in the Description field, then click Create button, then click Close button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "click Users link",
+          "click Action",
+          "click New User...",
+          "enter \"{Name}\" in the User name field",
+          "enter \"{Name2}\" in the Full name field",
+          "enter \"{Description}\" in the Description field",
+          "click Create button",
+          "click Close button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Name",        "label": "User name field",   "type": "text" },
+          { "name": "Name2",       "label": "Full name field",   "type": "text" },
+          { "name": "Description", "label": "Description field", "type": "text" }
+        ]
+      }
+    },
+    {
+      "id": "eval_006",
+      "description": "Windows - Add local user account via User Accounts control panel",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/LocalUserCreate02.mp4",
+      "targetUrl": "https://example.com",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click User Accounts link, then click User Accounts link, then click Change account type link, then click Manage another account link, then click Add a user account link, then enter \"{Name}\" in the User name field, then enter \"{Password}\" in the Password field, then enter \"{Password2}\" in the Confirm password field, then enter \"{Password3}\" in the Password hint field, then click Next button, then click Finish button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "click User Accounts link",
+          "click User Accounts link",
+          "click Change account type link",
+          "click Manage another account link",
+          "click Add a user account link",
+          "enter \"{Name}\" in the User name field",
+          "enter \"{Password}\" in the Password field",
+          "enter \"{Password2}\" in the Confirm password field",
+          "enter \"{Password3}\" in the Password hint field",
+          "click Next button",
+          "click Finish button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Name",      "label": "User name field",        "type": "text"     },
+          { "name": "Password",  "label": "Password field",         "type": "password" },
+          { "name": "Password2", "label": "Confirm password field", "type": "password" },
+          { "name": "Password3", "label": "Password hint field",    "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_007",
+      "description": "Coupa UAT - Login and navigate to user list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Coupa_AggUsers.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to https://sailpoint-uat.coupahost.com/user/list in the address bar, then wait for redirect to login page at https://sailpoint-uat.coupahost.com/sessions/new, then enter \"{Email}\" in the Username or Email Address field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Sign In button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to https://sailpoint-uat.coupahost.com/user/list in the address bar",
+          "wait for redirect to login page at https://sailpoint-uat.coupahost.com/sessions/new",
+          "enter \"{Email}\" in the Username or Email Address field",
+          "click the Next button",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign In button"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The users table has a pagination bar at the bottom showing Prev, page numbers (1, 2, 3, ...), and a Next button. Clicking Next navigates to the next page of results. There is also a Per page selector (15, 45, 90).",
+          "selectorHint": "a.next, .pagination a[rel='next'], button:contains('Next')"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Username or Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",                  "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_008",
+      "description": "Google Admin - Login and navigate to users list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_Aggregation.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "click the Email or phone field, then enter \"{Email}\" in the Email or phone field, then click the Next button, then enter \"{Password}\" in the Enter your password field, then click the Next button, then wait for the Google Admin console to load and navigate to the Users list page this completes all steps — do not perform any further actions ",
+        "steps": [
+          "click the Email or phone field",
+          "enter \"{Email}\" in the Email or phone field",
+          "click the Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click the Next button",
+          "wait for the Google Admin console to load and navigate to the Users list page"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The users table shows Page X of many at the bottom right with previous and next arrow buttons (< and >) to navigate between pages. A Rows per page dropdown (set to 50) is also present. Tooltips Go to next page and Go to previous page are visible on hover.",
+          "selectorHint": "button[aria-label='Go to next page']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email or phone field",      "type": "email"    },
+          { "name": "Password", "label": "Enter your password field", "type": "password" }
+        ]
+      }
+    }
+  ]
+}
