@@ -1,5 +1,116 @@
 /* ── Aggregation-specific styles ─────────────────────────────────────── */
 
+/* ── Mode Selector ────────────────────────────────────────────────────── */
+.mode-selector-panel {
+  margin-top: 20px;
+  margin-bottom: 4px;
+}
+
+.mode-selector-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 10px;
+}
+
+.mode-selector-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.mode-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+  padding: 14px 16px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  background: #fff;
+  user-select: none;
+}
+
+.mode-option:hover {
+  border-color: var(--action-blue);
+  background: #f5f9ff;
+}
+
+.mode-option-active {
+  border-color: var(--sp-blue);
+  background: #f0f7ff;
+  box-shadow: 0 0 0 2px rgba(0, 116, 213, 0.12);
+}
+
+.mode-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mode-option-icon {
+  font-size: 20px;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.mode-option-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mode-option-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mode-option-sub {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.mode-option-active .mode-option-title {
+  color: var(--sp-blue);
+}
+
+/* ── Strategy badge in Results stats bar ─────────────────────────────── */
+.strategy-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.strategy-network {
+  background: #e6f4ea;
+  color: #1a7340;
+  border: 1px solid #b2dfcc;
+}
+
+.strategy-llmdom {
+  background: #e3f0ff;
+  color: #0055cc;
+  border: 1px solid #b3d4ff;
+}
+
+.strategy-llmdom-fallback {
+  background: #fff8e1;
+  color: #b06800;
+  border: 1px solid #ffe082;
+}
+
 /* Pagination info display (read-only box in Section 2) */
 .pagination-info {
   background: #f8f9fa;

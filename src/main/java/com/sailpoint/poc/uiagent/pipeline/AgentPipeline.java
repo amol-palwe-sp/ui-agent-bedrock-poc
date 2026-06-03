@@ -4,6 +4,8 @@ import com.sailpoint.poc.uiagent.ActionLogger;
 import com.sailpoint.poc.uiagent.AgentLoop;
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.aggregation.AccountAggregator;
+import com.sailpoint.poc.uiagent.aggregation.AggregationMode;
+import com.sailpoint.poc.uiagent.aggregation.NetworkAggregator;
 import com.sailpoint.poc.uiagent.aggregation.TableDetectionResult;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
@@ -123,12 +125,20 @@ public final class AgentPipeline {
                     return runReplay(config, pl, browser, bedrock, totalUsage);
                 }
 
+                // ── NETWORK mode: start sniffing BEFORE navigation (REQ-NA-41) ─
+                NetworkAggregator networkAggregator = null;
+                if (config.isAggregation() && config.isNetworkMode()) {
+                    networkAggregator = new NetworkAggregator(config.networkAggConfig());
+                    networkAggregator.startSniffing(browser.page());
+                    pl.onLog("INFO", "Aggregation mode: NETWORK — network sniffer active");
+                }
+
                 // ── Navigate to start URL ─────────────────────────────────────
                 pl.onStatusChange(PipelineStatus.NAVIGATING);
                 pl.onLog("INFO", "Navigating to " + config.startUrl() + "...");
                 browser.navigate(config.startUrl());
 
-                // ── Run AgentLoop ─────────────────────────────────────────────
+                // ── Run AgentLoop (single loop for both modes — REQ-NA-44) ────
                 pl.onStatusChange(PipelineStatus.AGENT_RUNNING);
                 String resolvedGoal = config.resolvedGoal();
                 pl.onLog("INFO", "Starting agent loop (goal: "
@@ -174,9 +184,76 @@ public final class AgentPipeline {
                     return PipelineResult.provisioningSuccess(totalUsage, finalUrl).build();
                 }
 
-                // ── AGGREGATION: detect table ─────────────────────────────────
+                // ── NETWORK mode: settle wait, stop sniffing, attempt aggregation ──
+                if (networkAggregator != null) {
+                    // Allow SPA async XHR calls to fire before stopping the sniffer.
+                    // React/Angular/Vue apps load user data asynchronously AFTER the
+                    // page shell renders — the agent issues DONE once it sees the page
+                    // chrome, but the data XHR may still be in-flight.
+                    int settleMs = config.networkAggConfig().settleAfterDoneMs();
+                    if (settleMs > 0) {
+                        pl.onLog("INFO", "Waiting " + settleMs + " ms for SPA data calls to complete...");
+                        try { Thread.sleep(settleMs); } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }
+
+                    networkAggregator.stopSniffing();
+                    pl.onLog("INFO", "Sniffing complete — attempting NETWORK aggregation...");
+
+                    NetworkAggregator.AggregationResult netResult =
+                            networkAggregator.aggregate(browser, bedrock);
+                    totalUsage = totalUsage.add(networkAggregator.accumulatedUsage());
+                    pl.onTokenUsage(totalUsage);
+
+                    // Only treat as success when at least one row was extracted.
+                    // A qualifying payload with 0 extracted rows means the format was
+                    // unrecognised (e.g. Google batchexecute )]}'  prefix) — fall back.
+                    if (netResult.hasData() && !netResult.rows().isEmpty()) {
+                        pl.onLog("INFO", "NETWORK aggregation succeeded: "
+                                + netResult.rows().size() + " rows, "
+                                + netResult.pagesCollected() + " page(s)");
+                        pl.onStatusChange(PipelineStatus.WRITING_CSV);
+                        String csvPath = "";
+                        List<String> headers = netResult.headers();
+                        try {
+                            csvPath = writeCsv(netResult.rows(), headers,
+                                    config.aggregationConfig().outputDir());
+                            pl.onLog("SUCCESS", "CSV written to " + csvPath);
+                        } catch (IOException e) {
+                            pl.onLog("ERROR", "CSV write failed: " + e.getMessage());
+                        }
+                        List<Map<String,String>> preview = netResult.rows().size() > 10
+                                ? new ArrayList<>(netResult.rows().subList(0, 10))
+                                : new ArrayList<>(netResult.rows());
+                        pl.onStatusChange(PipelineStatus.DONE);
+                        return PipelineResult.aggregationSuccess(
+                                totalUsage, finalUrl,
+                                netResult.rows().size(), netResult.pagesCollected(),
+                                csvPath, headers, preview,
+                                AggregationMode.NETWORK).build();
+                    }
+
+                    // No qualifying payload — check fallback setting (REQ-NA-14)
+                    if (!config.networkAggConfig().fallbackToLlmDom()) {
+                        pl.onLog("WARNING", "No network payload found — fallback disabled");
+                        pl.onStatusChange(PipelineStatus.DONE);
+                        return PipelineResult.aggregationSuccess(
+                                totalUsage, finalUrl, 0, 0, "", List.of(), List.of(),
+                                AggregationMode.NETWORK).build();
+                    }
+
+                    pl.onLog("WARNING", "No network payload found — falling back to LLM_DOM");
+                    // fall through to LLM_DOM aggregation below
+                }
+
+                // ── LLM_DOM AGGREGATION: detect table ─────────────────────────
                 pl.onStatusChange(PipelineStatus.DETECTING_TABLE);
-                pl.onLog("INFO", "Detecting accounts table...");
+                if (networkAggregator == null) {
+                    pl.onLog("INFO", "Aggregation mode: LLM_DOM — detecting accounts table...");
+                } else {
+                    pl.onLog("INFO", "Detecting accounts table (LLM_DOM fallback)...");
+                }
                 AccountAggregator aggregator = new AccountAggregator(browser, bedrock);
                 TableDetectionResult tableResult = aggregator.detectTable();
 
@@ -190,7 +267,7 @@ public final class AgentPipeline {
                 pl.onLog("INFO", "Table detected — selector: " + tableResult.selector());
                 pl.onLog("INFO", "Columns: " + String.join(", ", tableResult.headers()));
 
-                // ── AGGREGATION: pagination loop ──────────────────────────────
+                // ── LLM_DOM AGGREGATION: pagination loop ──────────────────────
                 pl.onStatusChange(PipelineStatus.AGGREGATING);
                 int maxPages = config.aggregationConfig().maxPages();
                 List<Map<String,String>> allRows = aggregator.paginationLoop(
@@ -202,7 +279,7 @@ public final class AgentPipeline {
                 pl.onLog("INFO", "Scraped " + pagesScraped + " page(s), "
                         + allRows.size() + " total rows");
 
-                // ── AGGREGATION: write CSV ────────────────────────────────────
+                // ── LLM_DOM AGGREGATION: write CSV ────────────────────────────
                 pl.onStatusChange(PipelineStatus.WRITING_CSV);
                 List<String> headers = resolveHeaders(tableResult.headers(), allRows);
                 String csvPath = "";
@@ -218,11 +295,17 @@ public final class AgentPipeline {
                         ? new ArrayList<>(allRows.subList(0, 10))
                         : new ArrayList<>(allRows);
 
+                // Strategy used: LLM_DOM directly, or LLM_DOM as fallback from NETWORK
+                AggregationMode strategyUsed = networkAggregator != null
+                        ? AggregationMode.LLM_DOM   // was NETWORK, fell back
+                        : AggregationMode.LLM_DOM;  // was LLM_DOM from the start
+
                 pl.onStatusChange(PipelineStatus.DONE);
                 return PipelineResult.aggregationSuccess(
                         totalUsage, finalUrl,
                         allRows.size(), pagesScraped,
-                        csvPath, headers, preview).build();
+                        csvPath, headers, preview,
+                        strategyUsed).build();
             }
 
         } catch (InterruptedException e) {

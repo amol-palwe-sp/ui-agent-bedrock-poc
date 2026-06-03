@@ -1,9 +1,11 @@
 package com.sailpoint.poc.uiagent;
 
+import com.sailpoint.poc.uiagent.aggregation.AggregationMode;
 import com.sailpoint.poc.uiagent.config.AgentConfig;
 import com.sailpoint.poc.uiagent.config.AggregationConfig;
 import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.BrowserConfig;
+import com.sailpoint.poc.uiagent.config.NetworkAggregationConfig;
 import com.sailpoint.poc.uiagent.config.ReplayConfig;
 import com.sailpoint.poc.uiagent.config.VideoConfig;
 
@@ -324,6 +326,65 @@ public final class PocConfig {
         return optional("aggregation.output.dir", "./output");
     }
 
+    /**
+     * Active aggregation mode. Reads {@code aggregation.mode} from properties.
+     * Defaults to {@link AggregationMode#LLM_DOM} when the key is absent or invalid.
+     */
+    public AggregationMode aggregationMode() {
+        String raw = optional("aggregation.mode", "LLM_DOM").toUpperCase();
+        try { return AggregationMode.valueOf(raw); }
+        catch (IllegalArgumentException e) { return AggregationMode.LLM_DOM; }
+    }
+
+    // --- Network Aggregation ---
+
+    public String networkAggUrlKeywords() {
+        return optional("network.agg.url.keywords",
+                "users|accounts|members|identities|principals|people");
+    }
+
+    public String networkAggIdentityFields() {
+        return optional("network.agg.identity.fields",
+                "email|username|displayName|userId|user_id|login|firstName|lastName");
+    }
+
+    public int networkAggMinRecords() {
+        return Integer.parseInt(optional("network.agg.min.records", "5"));
+    }
+
+    public boolean networkAggFallbackLlmDom() {
+        return Boolean.parseBoolean(optional("network.agg.fallback.llm.dom", "true"));
+    }
+
+    public String networkAggPaginationParams() {
+        return optional("network.agg.pagination.params",
+                "page|offset|cursor|startIndex|start|pageToken");
+    }
+
+    public int networkAggMinBodyLength() {
+        return Integer.parseInt(optional("network.agg.min.body.length", "100"));
+    }
+
+    public int networkAggQualifyingScore() {
+        return Integer.parseInt(optional("network.agg.qualifying.score", "10"));
+    }
+
+    public int networkAggHttpConnectTimeoutMs() {
+        return Integer.parseInt(optional("network.agg.http.connect.timeout.ms", "15000"));
+    }
+
+    public int networkAggHttpRequestTimeoutMs() {
+        return Integer.parseInt(optional("network.agg.http.request.timeout.ms", "30000"));
+    }
+
+    /**
+     * Milliseconds to wait after AgentLoop completes before stopping the sniffer.
+     * Allows SPA async XHR calls to fire after the agent issues DONE.
+     */
+    public int networkAggSettleAfterDoneMs() {
+        return Integer.parseInt(optional("network.agg.settle.after.done.ms", "3000"));
+    }
+
     // =========================================================================
     // REQ-5: Typed sub-config facade methods
     // =========================================================================
@@ -393,6 +454,25 @@ public final class PocConfig {
      */
     public AggregationConfig aggregation() {
         return new AggregationConfig(aggregationMaxPages(), aggregationOutputDir());
+    }
+
+    /**
+     * Returns network-aggregation tuning as a typed config object.
+     * Prefer this over calling individual network.agg.* methods in new code.
+     */
+    public NetworkAggregationConfig networkAggregation() {
+        return new NetworkAggregationConfig(
+                networkAggUrlKeywords(),
+                networkAggIdentityFields(),
+                networkAggMinRecords(),
+                aggregationMaxPages(),
+                networkAggFallbackLlmDom(),
+                networkAggPaginationParams(),
+                networkAggMinBodyLength(),
+                networkAggQualifyingScore(),
+                networkAggHttpConnectTimeoutMs(),
+                networkAggHttpRequestTimeoutMs(),
+                networkAggSettleAfterDoneMs());
     }
 
     public int replayScrollSettleMs() {

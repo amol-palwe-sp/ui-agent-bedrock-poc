@@ -175,7 +175,30 @@
           </div>
         </div>
 
-        <!-- PART F: Run button -->
+        <!-- PART F: Aggregation Mode selector -->
+        <div class="mode-selector-panel">
+          <div class="mode-selector-label">Aggregation Mode</div>
+          <div class="mode-selector-options" role="radiogroup" aria-label="Aggregation mode">
+            <label class="mode-option mode-option-active" id="modeLabelLlmDom">
+              <input type="radio" name="aggregationMode" id="modeLlmDom" value="LLM_DOM" checked>
+              <span class="mode-option-icon">🖥</span>
+              <span class="mode-option-body">
+                <span class="mode-option-title">LLM DOM</span>
+                <span class="mode-option-sub">Visual scraping via Playwright + Claude vision</span>
+              </span>
+            </label>
+            <label class="mode-option" id="modeLabelNetwork">
+              <input type="radio" name="aggregationMode" id="modeNetwork" value="NETWORK">
+              <span class="mode-option-icon">⚡</span>
+              <span class="mode-option-body">
+                <span class="mode-option-title">Network Interception</span>
+                <span class="mode-option-sub">Captures raw JSON API responses — faster, richer data</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <!-- PART G: Run button -->
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btnRun" disabled>
             ▶ Run Aggregation
@@ -219,6 +242,10 @@
           <div class="stats-bar-item">
             <span class="stats-bar-label">Pages Scraped</span>
             <span class="stats-bar-value" id="statsPagesScraped">—</span>
+          </div>
+          <div class="stats-bar-item">
+            <span class="stats-bar-label">Strategy Used</span>
+            <span class="strategy-badge" id="statsStrategy">—</span>
           </div>
           <span class="stats-bar-columns" id="statsColumns"></span>
         </div>

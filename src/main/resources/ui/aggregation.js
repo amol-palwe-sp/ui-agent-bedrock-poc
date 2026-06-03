@@ -10,6 +10,7 @@
   let eventSource        = null;
   let isGenerating       = false;
   let isRunning          = false;
+  let selectedMode       = 'LLM_DOM'; // 'LLM_DOM' | 'NETWORK'
 
   // ── Element refs ───────────────────────────────────────────────────────────
   const dropZone               = document.getElementById('dropZone');
@@ -59,6 +60,7 @@
   const statsBar               = document.getElementById('statsBar');
   const statsTotalRows         = document.getElementById('statsTotalRows');
   const statsPagesScraped      = document.getElementById('statsPagesScraped');
+  const statsStrategy          = document.getElementById('statsStrategy');
   const statsColumns           = document.getElementById('statsColumns');
   const downloadRow            = document.getElementById('downloadRow');
   const btnDownloadCsv         = document.getElementById('btnDownloadCsv');
@@ -75,6 +77,7 @@
   document.addEventListener('DOMContentLoaded', function () {
     initDropZone();
     initSSE();
+    initModeSelector();
     setStatus('ready');
 
     btnGenerate.addEventListener('click', handleGenerate);
@@ -128,6 +131,24 @@
     fileSize.textContent = formatFileSize(file.size);
     fileInfo.classList.remove('hidden');
     btnGenerate.disabled = false;
+  }
+
+  // ── Mode Selector ──────────────────────────────────────────────────────────
+  function initModeSelector() {
+    var radios = document.querySelectorAll('input[name="aggregationMode"]');
+    radios.forEach(function (radio) {
+      radio.addEventListener('change', function () {
+        selectedMode = radio.value;
+        updateModeLabels();
+      });
+    });
+  }
+
+  function updateModeLabels() {
+    var llmLabel  = document.getElementById('modeLabelLlmDom');
+    var netLabel  = document.getElementById('modeLabelNetwork');
+    if (llmLabel)  llmLabel.classList.toggle('mode-option-active',  selectedMode === 'LLM_DOM');
+    if (netLabel)  netLabel.classList.toggle('mode-option-active',  selectedMode === 'NETWORK');
   }
 
   // ── Generate ───────────────────────────────────────────────────────────────
@@ -457,6 +478,7 @@
         goalLine:          goalString,
         url:               url,
         paginationPattern: paginationPattern,
+        aggregationMode:   selectedMode,
       }),
     })
       .then(function (r) { return r.json(); })
@@ -602,12 +624,32 @@
     resultsPlaceholder.classList.add('hidden');
 
     // Stats bar
-    statsTotalRows.textContent   = (stats.totalRows   || 0).toLocaleString();
+    statsTotalRows.textContent    = (stats.totalRows   || 0).toLocaleString();
     statsPagesScraped.textContent = (stats.pagesScraped || 0).toLocaleString();
     const cols = stats.columns || [];
     statsColumns.textContent = cols.length > 0
             ? 'Columns: ' + cols.join(', ')
             : '';
+
+    // Strategy badge (REQ-NA-48)
+    if (statsStrategy) {
+      var strategy = stats.strategyUsed || 'LLM_DOM';
+      var isFallback = (selectedMode === 'NETWORK' && strategy === 'LLM_DOM');
+      if (strategy === 'NETWORK') {
+        statsStrategy.textContent  = '⚡ Network';
+        statsStrategy.className    = 'strategy-badge strategy-network';
+        statsStrategy.title        = 'Strategy used: NETWORK interception';
+      } else if (isFallback) {
+        statsStrategy.textContent  = '🖥 LLM DOM (fallback)';
+        statsStrategy.className    = 'strategy-badge strategy-llmdom-fallback';
+        statsStrategy.title        = 'NETWORK mode fell back to LLM_DOM (no qualifying payload found)';
+      } else {
+        statsStrategy.textContent  = '🖥 LLM DOM';
+        statsStrategy.className    = 'strategy-badge strategy-llmdom';
+        statsStrategy.title        = 'Strategy used: LLM_DOM visual scraping';
+      }
+    }
+
     statsBar.classList.remove('hidden');
 
     // Download button

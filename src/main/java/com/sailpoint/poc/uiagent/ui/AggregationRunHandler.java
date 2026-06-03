@@ -2,6 +2,7 @@ package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
+import com.sailpoint.poc.uiagent.aggregation.AggregationMode;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
 import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
@@ -85,12 +86,22 @@ public final class AggregationRunHandler implements HttpHandler {
                         ppJson.optString("selectorHint", "").trim())
                 : new PaginationPattern("unknown", "", "");
 
+        // Parse aggregation mode from request (REQ-NA-46); default to LLM_DOM
+        AggregationMode aggMode;
+        try {
+            String rawMode = req.optString("aggregationMode", "LLM_DOM").trim().toUpperCase();
+            aggMode = AggregationMode.valueOf(rawMode);
+        } catch (IllegalArgumentException e) {
+            aggMode = AggregationMode.LLM_DOM;
+        }
+
         state.agentRunning.set(true);
         state.logQueue.offer("STATUS:aggregating");
 
         final String            finalUrl        = url;
         final String            finalGoal       = goalLine;
         final PaginationPattern finalPagination = pagination;
+        final AggregationMode   finalMode       = aggMode;
 
         Thread agent = new Thread(() -> {
             try {
@@ -102,6 +113,8 @@ public final class AggregationRunHandler implements HttpHandler {
                         .startUrl(finalUrl)
                         .goal(finalGoal)
                         .paginationPattern(finalPagination)
+                        .aggregationMode(finalMode)
+                        .networkAggConfig(config.networkAggregation())
                         .bedrockConfig(config.bedrock())
                         .browserConfig(config.browser())
                         .agentConfig(config.agent())
@@ -180,6 +193,9 @@ public final class AggregationRunHandler implements HttpHandler {
         statsSb.append(",\"inputTokens\":").append(result.totalUsage().inputTokens());
         statsSb.append(",\"outputTokens\":").append(result.totalUsage().outputTokens());
         statsSb.append(",\"costUsd\":").append(result.totalUsage().totalCostUsd());
+        // Include strategy used (REQ-NA-39, REQ-NA-48)
+        String strategyLabel = result.strategyUsed() != null ? result.strategyUsed().name() : "LLM_DOM";
+        statsSb.append(",\"strategyUsed\":").append(quoted(strategyLabel));
         statsSb.append("}");
         state.lastStatsJson.set(statsSb.toString());
 

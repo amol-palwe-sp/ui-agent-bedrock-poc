@@ -1,6 +1,7 @@
 package com.sailpoint.poc.uiagent.pipeline;
 
 import com.sailpoint.poc.uiagent.TokenUsage;
+import com.sailpoint.poc.uiagent.aggregation.AggregationMode;
 
 import java.util.Collections;
 import java.util.List;
@@ -56,6 +57,8 @@ public final class PipelineResult {
     private final String                      csvPath;
     private final List<String>                headers;
     private final List<Map<String,String>>    previewRows;
+    /** Which strategy was ultimately used (null for PROVISIONING tasks). */
+    private final AggregationMode             strategyUsed;
 
     private PipelineResult(Builder b) {
         this.taskType     = b.taskType;
@@ -73,6 +76,7 @@ public final class PipelineResult {
         this.previewRows  = b.previewRows  != null
                 ? Collections.unmodifiableList(b.previewRows)
                 : Collections.emptyList();
+        this.strategyUsed = b.strategyUsed;
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -91,6 +95,8 @@ public final class PipelineResult {
     public String                     csvPath()      { return csvPath; }
     public List<String>               headers()      { return headers; }
     public List<Map<String,String>>   previewRows()  { return previewRows; }
+    /** The aggregation strategy that was actually used (null for PROVISIONING). */
+    public AggregationMode            strategyUsed() { return strategyUsed; }
 
     // ── Static factory helpers ────────────────────────────────────────────────
 
@@ -103,13 +109,15 @@ public final class PipelineResult {
 
     static Builder aggregationSuccess(TokenUsage usage, String finalUrl,
                                       int rowsScraped, int pagesScraped, String csvPath,
-                                      List<String> headers, List<Map<String,String>> previewRows) {
+                                      List<String> headers, List<Map<String,String>> previewRows,
+                                      AggregationMode strategyUsed) {
         return new Builder()
                 .taskType(PipelineConfig.TaskType.AGGREGATION)
                 .success(true).exitReason(ExitReason.DONE)
                 .totalUsage(usage).finalUrl(finalUrl)
                 .rowsScraped(rowsScraped).pagesScraped(pagesScraped)
-                .csvPath(csvPath).headers(headers).previewRows(previewRows);
+                .csvPath(csvPath).headers(headers).previewRows(previewRows)
+                .strategyUsed(strategyUsed);
     }
 
     static PipelineResult interrupted(PipelineConfig.TaskType taskType, TokenUsage usage) {
@@ -139,18 +147,20 @@ public final class PipelineResult {
         String                   csvPath      = "";
         List<String>             headers      = Collections.emptyList();
         List<Map<String,String>> previewRows  = Collections.emptyList();
+        AggregationMode          strategyUsed = null;
 
-        Builder taskType(PipelineConfig.TaskType t)  { this.taskType = t;     return this; }
-        Builder success(boolean s)                   { this.success = s;      return this; }
-        Builder exitReason(ExitReason r)             { this.exitReason = r;   return this; }
-        Builder totalUsage(TokenUsage u)             { this.totalUsage = u;   return this; }
-        Builder errorMessage(String m)               { this.errorMessage = m; return this; }
-        Builder finalUrl(String u)                   { this.finalUrl = u;     return this; }
-        Builder rowsScraped(int n)                   { this.rowsScraped = n;  return this; }
-        Builder pagesScraped(int n)                  { this.pagesScraped = n; return this; }
-        Builder csvPath(String p)                    { this.csvPath = p;      return this; }
-        Builder headers(List<String> h)              { this.headers = h;      return this; }
-        Builder previewRows(List<Map<String,String>> r) { this.previewRows = r; return this; }
+        Builder taskType(PipelineConfig.TaskType t)     { this.taskType = t;      return this; }
+        Builder success(boolean s)                      { this.success = s;       return this; }
+        Builder exitReason(ExitReason r)                { this.exitReason = r;    return this; }
+        Builder totalUsage(TokenUsage u)                { this.totalUsage = u;    return this; }
+        Builder errorMessage(String m)                  { this.errorMessage = m;  return this; }
+        Builder finalUrl(String u)                      { this.finalUrl = u;      return this; }
+        Builder rowsScraped(int n)                      { this.rowsScraped = n;   return this; }
+        Builder pagesScraped(int n)                     { this.pagesScraped = n;  return this; }
+        Builder csvPath(String p)                       { this.csvPath = p;       return this; }
+        Builder headers(List<String> h)                 { this.headers = h;       return this; }
+        Builder previewRows(List<Map<String,String>> r) { this.previewRows = r;   return this; }
+        Builder strategyUsed(AggregationMode m)         { this.strategyUsed = m;  return this; }
 
         PipelineResult build() { return new PipelineResult(this); }
     }
