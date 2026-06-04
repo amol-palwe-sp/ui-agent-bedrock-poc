@@ -99,8 +99,24 @@ public final class NetworkAggregator {
     /** URL → raw JSON body (first-capture wins, thread-safe). */
     private final Map<String, String> capturedPayloads = new ConcurrentHashMap<>();
 
+    /**
+     * URL → Authorization header value from the intercepted request.
+     * Populated alongside {@link #capturedPayloads} so that cross-domain APIs
+     * (e.g. ISC's api.cloud.sailpoint.com) can be paginated using the same
+     * Bearer token the browser used — cookies alone won't work across domains.
+     * Values are NEVER logged (REQ-NA-NFR-8).
+     */
+    private final Map<String, String> capturedAuthHeaders = new ConcurrentHashMap<>();
+
     /** Ordered capture list — used to prefer first-captured on score ties. */
     private final Queue<String> captureOrder = new ConcurrentLinkedQueue<>();
+
+    /**
+     * Query-parameter names that represent a record offset (SQL-style) rather than
+     * a page number. These must be incremented by the {@code limit} value, not by 1.
+     */
+    private static final java.util.Set<String> OFFSET_PARAMS =
+            java.util.Set.of("offset", "startindex", "start");
 
     private final AtomicBoolean sniffing = new AtomicBoolean(false);
     private final NetworkAggregationConfig config;
@@ -149,6 +165,17 @@ public final class NetworkAggregator {
 
                 if (capturedPayloads.putIfAbsent(url, body) == null) {
                     captureOrder.add(url);
+
+                    // Capture the Authorization header from the originating request so
+                    // that cross-domain APIs (Bearer-token auth) can be paginated without
+                    // relying solely on browser cookies (REQ-NA-NFR-8: value not logged).
+                    try {
+                        String auth = response.request().headers()
+                                .getOrDefault("authorization", "");
+                        if (!auth.isBlank()) {
+                            capturedAuthHeaders.put(url, auth);
+                        }
+                    } catch (Exception ignored) {}
                 }
             } catch (Exception e) {
                 // REQ-NA-8: never let listener exceptions propagate
@@ -197,9 +224,12 @@ public final class NetworkAggregator {
         System.out.println("[NetworkAggregator] Pagination strategy: " + strategy.type()
                 + (strategy.paramName() != null ? "  param=" + strategy.paramName() : ""));
 
+        // Resolve auth header for the best payload's URL (may be empty for cookie-auth apps)
+        String authHeader = capturedAuthHeaders.getOrDefault(best.url(), "");
+
         // Paginate pages 2+ via direct HTTP (REQ-NA-26, REQ-NA-27)
         if (strategy.type() != PaginationStrategyType.SINGLE_PAGE) {
-            paginateAndCollect(best.url(), best.body(), strategy, fieldMapping, allRows, browser);
+            paginateAndCollect(best.url(), best.body(), strategy, fieldMapping, allRows, browser, authHeader);
         }
 
         System.out.println("[NetworkAggregator] Collected " + allRows.size()
@@ -462,8 +492,9 @@ public final class NetworkAggregator {
     }
 
     /**
-     * Fetches pages 2, 3, … via direct HTTP using the browser session's cookies,
-     * appending all records to {@code allRows} (REQ-NA-26, REQ-NA-27).
+     * Fetches pages 2, 3, … via direct HTTP, appending all records to {@code allRows}.
+     * Uses the captured {@code authHeader} (Bearer token) when present; falls back to
+     * browser session cookies for cookie-authenticated applications (REQ-NA-26, REQ-NA-27).
      */
     private void paginateAndCollect(
             String baseUrl,
@@ -471,7 +502,8 @@ public final class NetworkAggregator {
             PaginationStrategy strategy,
             Map<String, String> fieldMapping,
             List<Map<String, String>> allRows,
-            BrowserSession browser) {
+            BrowserSession browser,
+            String authHeader) {
 
         String cookieHeader = extractCookieHeader(browser);
         HttpClient http = HttpClient.newBuilder()
@@ -488,13 +520,26 @@ public final class NetworkAggregator {
             if (strategy.type() == PaginationStrategyType.CURSOR) {
                 nextUrl = replaceOrAppendParam(currentUrl, strategy.paramName(), currentCursor);
             } else {
-                // PAGE_PARAM: increment numeric param
+                // PAGE_PARAM: increment.
+                // For offset-style params (offset, startIndex, start) the step equals the
+                // limit value from the URL — e.g. limit=50,offset=0 → offset=50 → offset=100.
+                // For page-number params (page, pageToken) the step is always 1.
+                String paramLower = strategy.paramName().toLowerCase();
                 String currentVal = extractQueryParam(currentUrl, strategy.paramName());
-                long nextPage = tryParsePageNum(currentVal) + 1;
-                nextUrl = replaceOrAppendParam(currentUrl, strategy.paramName(), String.valueOf(nextPage));
+                long currentNum   = tryParsePageNum(currentVal);
+                long step;
+                if (OFFSET_PARAMS.contains(paramLower)) {
+                    String limitStr = extractQueryParam(currentUrl, "limit");
+                    step = limitStr != null ? tryParsePageNum(limitStr) : 1;
+                    if (step <= 0) step = 1;
+                } else {
+                    step = 1;
+                }
+                long nextVal = currentNum + step;
+                nextUrl = replaceOrAppendParam(currentUrl, strategy.paramName(), String.valueOf(nextVal));
             }
 
-            String responseBody = fetchPage(nextUrl, cookieHeader, http);
+            String responseBody = fetchPage(nextUrl, cookieHeader, authHeader, http);
             if (responseBody == null) {
                 System.out.println("[NetworkAggregator] HTTP fetch returned null — stopping pagination");
                 break;
@@ -547,10 +592,12 @@ public final class NetworkAggregator {
     // ── HTTP fetch ────────────────────────────────────────────────────────────
 
     /**
-     * Fetches a single page via direct HTTP using the browser session's cookies.
+     * Fetches a single page via direct HTTP.
+     * Prefers {@code authHeader} (Bearer token) when present; also sends cookies
+     * as a fallback for cookie-authenticated apps. Never logs credential values.
      * Returns {@code null} on non-2xx status or any exception (REQ-NA-35, REQ-NA-36).
      */
-    private String fetchPage(String url, String cookieHeader, HttpClient http) {
+    private String fetchPage(String url, String cookieHeader, String authHeader, HttpClient http) {
         try {
             HttpRequest.Builder req = HttpRequest.newBuilder()
                     .uri(URI.create(url))
@@ -559,6 +606,12 @@ public final class NetworkAggregator {
                     .header("Accept", "application/json")
                     .header("X-Requested-With", "XMLHttpRequest");
 
+            // Bearer token auth (cross-domain APIs like ISC api.cloud.sailpoint.com)
+            if (authHeader != null && !authHeader.isBlank()) {
+                req.header("Authorization", authHeader);
+            }
+
+            // Cookie auth fallback (same-domain session-cookie apps)
             if (cookieHeader != null && !cookieHeader.isBlank()) {
                 req.header("Cookie", cookieHeader);
             }
