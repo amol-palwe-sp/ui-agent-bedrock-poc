@@ -1,12 +1,12 @@
 package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.aggregation.AggregationVideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
-import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
@@ -125,20 +125,25 @@ public final class AggregationGenerateHandler implements HttpHandler {
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
             push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
 
-            // AGGREGATION + PLACEHOLDER: {Token} substitution so UI can collect credentials
+            // Use the stable aggregation prompt — {Token} placeholders, no GOTO steps
+            String systemPrompt = AggregationVideoAnalysisPrompt.SYSTEM_PROMPT;
+            String userPrompt = (overrideUrl != null && !overrideUrl.isBlank())
+                    ? AggregationVideoAnalysisPrompt.userPromptWithUrl(overrideUrl)
+                    : AggregationVideoAnalysisPrompt.USER_PROMPT;
+
+            // Keep VideoAnalysisRequest for parse + confidence eval compatibility
             VideoAnalysisRequest request = overrideUrl != null && !overrideUrl.isBlank()
                     ? VideoAnalysisRequest.aggregation(
                             VideoAnalysisRequest.CredentialMode.PLACEHOLDER, overrideUrl)
                     : VideoAnalysisRequest.aggregation(
                             VideoAnalysisRequest.CredentialMode.PLACEHOLDER);
-            VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
                     config.bedrock().region(), config.bedrock().profile(),
                     config.bedrock().modelId(), config.bedrock().maxTokens(),
                     config.bedrock().temperature())) {
                 InvokeResult result = client.invokeWithMultipleImages(
-                        prompts.systemPrompt(), prompts.userPrompt(), frames);
+                        systemPrompt, userPrompt, frames);
 
                 push("LOG:SUCCESS:Claude responded — parsing navigation goal and pagination pattern...");
 

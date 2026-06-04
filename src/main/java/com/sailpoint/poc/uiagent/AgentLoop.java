@@ -347,28 +347,6 @@ public final class AgentLoop {
 
     // -------------------------------------------------------------------------
     // Helpers
-    // -------------------------------------------------------------------------
-
-//    private static boolean shouldTakeScreenshot(String lastAction) {
-//        if (lastAction == null) return true;
-//        return switch (lastAction.toUpperCase()) {
-//            // These change visual state → always take a fresh screenshot.
-//            case "INIT", "GOTO", "CLICK", "SELECT_OPTION", "KEYPRESS",
-//                 "HOVER", "CHECK", "RELOAD_PAGE",
-//                 // Bug 3 fix: TYPE changes the field value visually; without a screenshot the
-//                 // LLM has no confirmation the text landed and will repeat the TYPE next step.
-//                 "TYPE" -> true;
-//            // Pure positional / temporal actions — no meaningful visual diff.
-//            case "SCROLL", "WAIT" -> false;
-//            default -> true; // unknown — safe to screenshot
-//        };
-//    }
-
-//    private static String getLastActionType(JSONArray actions) {
-//        if (actions == null || actions.isEmpty()) return "UNKNOWN";
-//        int lastIdx = Math.min(actions.length(), MAX_ACTIONS_PER_BATCH) - 1;
-//        return actions.getJSONObject(lastIdx).optString("type", "UNKNOWN").toUpperCase();
-//    }
 
     private static void printTotalUsage(TokenUsage total) {
         System.out.println("\n========== TOTAL TOKEN USAGE ==========");
@@ -606,8 +584,15 @@ public final class AgentLoop {
         if (fromUrl == null || toUrl == null) return "s" + step + ": page changed";
         String from = fromUrl.toLowerCase();
         String to   = toUrl.toLowerCase();
-        if ((from.contains("signin") || from.contains("login"))
-                && !to.contains("signin") && !to.contains("login")) {
+        // Recognise any common auth/session path as a login page so the "Login completed"
+        // signal fires regardless of the identity provider's URL scheme.
+        boolean fromIsAuth = from.contains("signin")  || from.contains("login")
+                          || from.contains("session") || from.contains("authn")
+                          || from.contains("auth/");
+        boolean toIsAuth   = to.contains("signin")    || to.contains("login")
+                          || to.contains("session")   || to.contains("authn")
+                          || to.contains("auth/");
+        if (fromIsAuth && !toIsAuth) {
             return "s" + step + ": ✓ Login completed";
         }
         if (to.contains("challenge/pwd") || to.contains("challenge/password")) {

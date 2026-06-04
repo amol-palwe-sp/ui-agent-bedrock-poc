@@ -602,7 +602,8 @@ public final class AccountAggregator {
                 + "Determine if there is a NEXT PAGE button or link for the ACCOUNTS TABLE "
                 + "(not login form buttons). "
                 + "Reply ONLY with valid JSON: "
-                + "{ \"hasNext\": <bool>, \"element_id\": <int or null>, \"reason\": \"<string>\" }";
+                + "{ \"hasNext\": <bool>, \"element_id\": <string or null>, \"reason\": \"<string>\" }"
+                + " — use the exact element_id value shown in the interactable elements list.";
         String userPrompt =
                 "Is there a next page button for the accounts/users table (not login)?\n\n"
                 + "Interactable elements:\n" + elementSummary
@@ -627,9 +628,10 @@ public final class AccountAggregator {
 
             String elementId;
             if (elementIdObj instanceof Number n) {
+                // Fallback: some models still return a numeric index — accept it
                 elementId = String.valueOf(n.intValue());
             } else {
-                elementId = parsed.optString("element_id", "").trim();
+                elementId = elementIdObj.toString().trim();
             }
             if (elementId.isBlank()) {
                 System.out.println("  [Next] Claude returned invalid element_id — stopping.");
@@ -686,7 +688,7 @@ public final class AccountAggregator {
             if (el == null) continue;
             String text = el.optString("text", "");
             if (text.length() > 80) text = text.substring(0, 80) + "…";
-            sb.append('[').append(el.optInt("id")).append("] ")
+            sb.append('[').append(el.optString("id")).append("] ")
               .append(el.optString("tag")).append(" — ").append(text).append('\n');
         }
         return sb.toString();
