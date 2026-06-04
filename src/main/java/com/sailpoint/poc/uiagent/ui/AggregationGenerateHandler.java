@@ -1,12 +1,13 @@
 package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.aggregation.AggregationUIAnalysis;
+import com.sailpoint.poc.uiagent.aggregation.AggregationVideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
-import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
@@ -30,9 +31,8 @@ import java.util.UUID;
  * POST /api/aggregation/generate
  *
  * <p>Accepts a multipart/form-data MP4 upload, extracts frames, invokes Claude once using
- * {@link VideoAnalysisPrompt} (AGGREGATION + PLACEHOLDER mode) to produce a navigation
- * goal with {@code {Token}} placeholders AND a pagination pattern, then returns the
- * parsed result as JSON.
+ * {@link AggregationVideoAnalysisPrompt} to produce a navigation goal with {@code {Token}}
+ * placeholders AND a pagination pattern, then returns the parsed result as JSON.
  *
  * <p>Progress messages are pushed to {@link AggregationServerState#logQueue} so the
  * aggregation SSE stream can relay them to the browser in real time.
@@ -125,52 +125,61 @@ public final class AggregationGenerateHandler implements HttpHandler {
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
             push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
 
-            // AGGREGATION + PLACEHOLDER: {Token} substitution so UI can collect credentials
-            VideoAnalysisRequest request = overrideUrl != null && !overrideUrl.isBlank()
-                    ? VideoAnalysisRequest.aggregation(
-                            VideoAnalysisRequest.CredentialMode.PLACEHOLDER, overrideUrl)
-                    : VideoAnalysisRequest.aggregation(
-                            VideoAnalysisRequest.CredentialMode.PLACEHOLDER);
-            VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
+            // Use the stable aggregation prompt — {Token} placeholders, no GOTO steps
+            String userPrompt = (overrideUrl != null && !overrideUrl.isBlank())
+                    ? AggregationVideoAnalysisPrompt.userPromptWithUrl(overrideUrl)
+                    : AggregationVideoAnalysisPrompt.USER_PROMPT;
+
+            InvokeResult result;
+            AggregationUIAnalysis analysis;
+            ConfidenceResult confidence = null;
 
             try (BedrockAnthropicClient client = new BedrockAnthropicClient(
                     config.bedrock().region(), config.bedrock().profile(),
                     config.bedrock().modelId(), config.bedrock().maxTokens(),
                     config.bedrock().temperature())) {
-                InvokeResult result = client.invokeWithMultipleImages(
-                        prompts.systemPrompt(), prompts.userPrompt(), frames);
+
+                result = client.invokeWithMultipleImages(
+                        AggregationVideoAnalysisPrompt.SYSTEM_PROMPT, userPrompt, frames);
 
                 push("LOG:SUCCESS:Claude responded — parsing navigation goal and pagination pattern...");
 
-                VideoAnalysisResult analysis = VideoAnalysisResult.parse(result.text(), request);
-
-                if (!analysis.isValid()) {
-                    push("LOG:ERROR:Parse failed: " + analysis.issues());
+                try {
+                    analysis = AggregationVideoAnalysisPrompt.parse(result.text());
+                } catch (IllegalArgumentException e) {
+                    push("LOG:ERROR:Parse failed: " + e.getMessage());
                     push("STATUS:ready");
-                    String escaped = String.join("; ", analysis.issues())
-                            .replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
+                    String escaped = e.getMessage() == null ? "Parse error"
+                            : e.getMessage().replace("\"", "\\\"").replace("\n", " ").replace("\r", "");
                     sendJson(ex, 500, "{\"error\":\"" + escaped + "\"}");
                     return;
                 }
 
-                ConfidenceResult confidence = null;
                 if (evalEnabled) {
                     push("LOG:INFO:Running real-time confidence evaluation...");
+                    VideoAnalysisResult evalInput = new VideoAnalysisResult(
+                            VideoAnalysisRequest.TaskType.AGGREGATION,
+                            analysis.targetUrl(),
+                            analysis.navigationGoal(),
+                            List.of(),
+                            analysis.paginationPattern(),
+                            true,
+                            List.of());
                     confidence = ConfidenceEvaluator.evaluate(
-                            analysis, "AGGREGATION", "PLACEHOLDER", client);
+                            evalInput, "AGGREGATION", "PLACEHOLDER", client);
                     push("LOG:INFO:Confidence: " + confidence.confidenceScore()
                             + " — " + confidence.recommendation());
                 } else {
                     push("LOG:INFO:Confidence eval skipped (disabled by user)");
                 }
-
-                List<String> steps = analysis.steps();
-                push("LOG:INFO:Extracted " + steps.size() + " navigation step(s)");
-                push("STATUS:ready");
-
-                String json = buildResultJson(analysis, steps, result, frames.size(), confidence);
-                sendJson(ex, 200, json);
             }
+
+            List<String> steps = parseSteps(analysis.navigationGoal());
+            push("LOG:INFO:Extracted " + steps.size() + " navigation step(s)");
+            push("STATUS:ready");
+
+            String json = buildResultJson(analysis, steps, result, frames.size(), confidence);
+            sendJson(ex, 200, json);
 
         } catch (Exception e) {
             push("LOG:ERROR:" + e.getMessage());
@@ -191,8 +200,17 @@ public final class AggregationGenerateHandler implements HttpHandler {
         state.logQueue.offer(msg);
     }
 
+    /** Splits a navigation goal on {@code ", then "} to produce individual step strings. */
+    private static List<String> parseSteps(String navigationGoal) {
+        if (navigationGoal == null || navigationGoal.isBlank()) return List.of();
+        return Arrays.stream(navigationGoal.split(",\\s*then\\s+"))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .toList();
+    }
+
     private static String buildResultJson(
-            VideoAnalysisResult analysis,
+            AggregationUIAnalysis analysis,
             List<String> steps,
             InvokeResult result,
             int frameCount,
@@ -212,34 +230,17 @@ public final class AggregationGenerateHandler implements HttpHandler {
             sb.append(quoted(steps.get(i)));
         }
         sb.append("]");
-        // Token definitions
-        sb.append(",\"tokens\":[");
-        for (int i = 0; i < analysis.tokens().size(); i++) {
-            if (i > 0) sb.append(",");
-            var t = analysis.tokens().get(i);
-            sb.append("{\"name\":").append(quoted(t.name()))
-              .append(",\"label\":").append(quoted(t.label()))
-              .append(",\"type\":").append(quoted(t.type())).append("}");
-        }
-        sb.append("]");
         sb.append(",\"paginationPattern\":{");
         sb.append("\"type\":").append(quoted(pp.type()));
         sb.append(",\"description\":").append(quoted(pp.description()));
         sb.append(",\"selectorHint\":").append(quoted(pp.selectorHint()));
         sb.append("}");
-        sb.append(",\"isValid\":").append(analysis.isValid());
-        sb.append(",\"issues\":[");
-        List<String> issues = analysis.issues();
-        for (int i = 0; i < issues.size(); i++) {
-            if (i > 0) sb.append(",");
-            sb.append(quoted(issues.get(i)));
-        }
-        sb.append("]");
+        sb.append(",\"isValid\":true");
+        sb.append(",\"issues\":[]");
         sb.append(",\"inputTokens\":").append(result.usage().inputTokens());
         sb.append(",\"outputTokens\":").append(result.usage().outputTokens());
         sb.append(",\"costUsd\":").append(result.usage().totalCostUsd());
         sb.append(",\"frameCount\":").append(frameCount);
-        // Confidence evaluation
         if (confidence != null) {
             sb.append(",\"confidenceScore\":").append(confidence.confidenceScore());
             sb.append(",\"recommendation\":").append(quoted(confidence.recommendation()));
