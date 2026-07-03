@@ -79,6 +79,13 @@ public final class AgentLoop {
             - HOVER over an element to reveal hidden menus, tooltips, or dropdown triggers.
             - CHECK to toggle a checkbox; include "checked": true or false.
             - RELOAD_PAGE if the page is stuck (spinner, blank, stalled after form submission).
+              NEVER use RELOAD_PAGE when the current URL contains "?code=" or "&code=" — these
+              are one-time OAuth callback tokens that the page must consume. Use WAIT (up to
+              5000ms) instead and let the page redirect itself. Reloading will destroy the token
+              and permanently break the session.
+            - When the URL is a loading/spinner route (e.g. /loading, /callback, /sso) with few
+              or no interactable elements, prefer WAIT over RELOAD_PAGE. Only reload if you have
+              waited at least 6 seconds total and the page has not progressed.
             - GOTO only when the goal requires a different URL than the current one.
             - Set goal_achieved to true and include { "type": "DONE" } when the goal is fully met.
             - If the goal cannot be achieved, set goal_achieved to true with
@@ -275,7 +282,14 @@ public final class AgentLoop {
             // Clear per-element repeat counts when the page changes so new-page elements aren't blocked.
             if (urlChanged) actionRepeatCounts.clear();
 
-            if (urlChanged || anySuccess) {
+            // WAIT and RELOAD_PAGE always return ok=true but represent no meaningful forward
+            // progress on their own. Exclude them from resetting the no-progress streak so the
+            // stuck-page detector can still fire when the agent is in a WAIT/RELOAD loop.
+            boolean meaningfulSuccess = anySuccess
+                    && !"RELOAD_PAGE".equals(lastActionType)
+                    && !"WAIT".equals(lastActionType);
+
+            if (urlChanged || meaningfulSuccess) {
                 noProgressStreak = 0;
             } else {
                 noProgressStreak++;
@@ -543,6 +557,11 @@ public final class AgentLoop {
                 yield browser.checkboxByStableId(id, checked);
             }
             case "RELOAD_PAGE" -> {
+                String currentUrl = browser.currentUrl();
+                if (currentUrl.contains("?code=") || currentUrl.contains("&code=")) {
+                    System.out.println("ACTION RELOAD_PAGE — SKIPPED (OAuth callback URL; reloading would invalidate the one-time code)");
+                    yield fail("reload blocked on OAuth callback — WAIT for the page to finish loading instead");
+                }
                 System.out.println("ACTION RELOAD_PAGE");
                 yield browser.reloadPage();
             }
