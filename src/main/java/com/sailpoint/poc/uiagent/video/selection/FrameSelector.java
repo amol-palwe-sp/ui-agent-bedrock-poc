@@ -66,15 +66,25 @@ public final class FrameSelector {
 
         int budget = maxFrames;
         int allowance = (int) Math.ceil(maxFrames * 1.1);
+        double minGap = config.selectionMinGapSeconds();
         pool.sort(Comparator.comparingDouble(ScoredFrame::finalScore).reversed());
 
+        // Greedy top-score fill with temporal non-max suppression: a high-score frame blocks
+        // lower-score frames within minGap seconds of it, so one busy moment doesn't consume the
+        // whole frame budget. enforceCoverage() below is free to add frames back into any gap
+        // that ends up too large as a result.
         for (ScoredFrame f : pool) {
             if (selected.size() >= budget) {
                 break;
             }
-            if (selectedIndices.add(f.frameIndex())) {
-                selected.add(f);
+            if (selectedIndices.contains(f.frameIndex())) {
+                continue;
             }
+            if (minGap > 0 && isTooCloseToSelected(selected, f, minGap)) {
+                continue;
+            }
+            selectedIndices.add(f.frameIndex());
+            selected.add(f);
         }
 
         selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
@@ -88,9 +98,26 @@ public final class FrameSelector {
 
         if (selected.size() > allowance) {
             trimToAllowance(selected, mandatory, allowance);
+            if (selected.size() > allowance) {
+                System.err.printf(
+                        "WARNING: %d mandatory frames exceed the frame allowance (%d); keeping all "
+                        + "of them since mandatory frames carry information (URL/navigation "
+                        + "changes) required for correctness. Consider raising maxFrames or "
+                        + "tightening video.url.bar.mandatory.threshold.%n",
+                        selected.size(), allowance);
+            }
         }
 
         return new SelectionResult(selected, duplicatesRemoved, maxGapSeconds);
+    }
+
+    private boolean isTooCloseToSelected(List<ScoredFrame> selected, ScoredFrame candidate, double minGap) {
+        for (ScoredFrame s : selected) {
+            if (Math.abs(s.frameTime() - candidate.frameTime()) < minGap) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void enforceCoverage(
@@ -135,30 +162,48 @@ public final class FrameSelector {
         }
     }
 
+    /**
+     * Removes near-duplicate frames by comparing every pair directly via their fingerprints
+     * (not just neighbours in the current sort order, and not via each frame's diff-vs-predecessor,
+     * which does not describe how two frames compare to EACH OTHER). Processes frames highest-score
+     * first so each similarity cluster keeps its best representative; mandatory frames are never
+     * removed but do count as cluster representatives so lower-score near-duplicates of a mandatory
+     * frame are still dropped.
+     */
     private void deduplicate(List<ScoredFrame> selected) {
         if (selected.size() < 2) {
             return;
         }
-        List<ScoredFrame> toRemove = new ArrayList<>();
-        for (int i = 0; i < selected.size() - 1; i++) {
-            ScoredFrame a = selected.get(i);
-            ScoredFrame b = selected.get(i + 1);
-            if (a.isMandatory() || b.isMandatory()) {
+        List<ScoredFrame> byScoreDesc = new ArrayList<>(selected);
+        byScoreDesc.sort(Comparator.comparingDouble(ScoredFrame::finalScore).reversed());
+
+        List<ScoredFrame> kept = new ArrayList<>();
+        List<ScoredFrame> removed = new ArrayList<>();
+        for (ScoredFrame candidate : byScoreDesc) {
+            if (candidate.isMandatory() || candidate.fingerprint() == null) {
+                kept.add(candidate);
                 continue;
             }
-            double similarity = diffCalculator.similarity(
-                    a.diff().cellChanges(), a.diff().cellChanged(),
-                    b.diff().cellChanges(), b.diff().cellChanged());
-            if (similarity >= config.selectionSimilarityThreshold()) {
-                if (a.finalScore() >= b.finalScore()) {
-                    toRemove.add(b);
-                } else {
-                    toRemove.add(a);
+            boolean isDuplicate = false;
+            for (ScoredFrame representative : kept) {
+                if (representative.fingerprint() == null) {
+                    continue;
                 }
-                duplicatesRemoved++;
+                double similarity = diffCalculator.similarity(
+                        candidate.fingerprint(), representative.fingerprint());
+                if (similarity >= config.selectionSimilarityThreshold()) {
+                    isDuplicate = true;
+                    break;
+                }
+            }
+            if (isDuplicate) {
+                removed.add(candidate);
+            } else {
+                kept.add(candidate);
             }
         }
-        selected.removeAll(toRemove);
+        duplicatesRemoved += removed.size();
+        selected.removeAll(removed);
     }
 
     private void applyLastFrameRules(

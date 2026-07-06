@@ -117,21 +117,51 @@ public final class GridDiffCalculator {
     }
 
     /**
-     * Grid diff between two encoded JPEG frames (deduplication).
+     * Per-cell mean-intensity fingerprint of a single frame (0..1 per cell), independent of any
+     * other frame. Unlike {@link #compute}, which only describes how a frame differs from its
+     * immediate predecessor, this lets us compare ANY two frames directly for deduplication.
      */
-    public double similarity(double[][] changesA, boolean[][] changedA, double[][] changesB, boolean[][] changedB) {
-        int n = changesA.length;
-        int same = 0;
+    public double[][] fingerprint(Mat gray) {
+        int gridSize = config.gridSize();
+        int rows = gray.rows();
+        int cols = gray.cols();
+        int cellH = Math.max(1, rows / gridSize);
+        int cellW = Math.max(1, cols / gridSize);
+
+        double[][] means = new double[gridSize][gridSize];
+        for (int gr = 0; gr < gridSize; gr++) {
+            int y = gr * cellH;
+            int h = gr == gridSize - 1 ? rows - y : cellH;
+            for (int gc = 0; gc < gridSize; gc++) {
+                int x = gc * cellW;
+                int w = gc == gridSize - 1 ? cols - x : cellW;
+                Rect roi = new Rect(x, y, w, h);
+                Mat cell = new Mat(gray, roi);
+                means[gr][gc] = Core.mean(cell).val[0] / 255.0;
+            }
+        }
+        return means;
+    }
+
+    /**
+     * Direct similarity between two frames' fingerprints, in [0, 1] where 1 means visually
+     * identical. Compares mean cell intensity deltas against {@link VideoConfig#gridCellThreshold}
+     * so the same "did this cell meaningfully change" notion used for diffing also drives dedup.
+     */
+    public double similarity(double[][] fingerprintA, double[][] fingerprintB) {
+        int n = fingerprintA.length;
+        double sumAbsDiff = 0.0;
         int total = n * n;
         for (int r = 0; r < n; r++) {
             for (int c = 0; c < n; c++) {
-                boolean a = changedA[r][c];
-                boolean b = changedB[r][c];
-                if (a == b) {
-                    same++;
-                }
+                sumAbsDiff += Math.abs(fingerprintA[r][c] - fingerprintB[r][c]);
             }
         }
-        return (double) same / total;
+        double meanAbsDiff = sumAbsDiff / total;
+        double threshold = config.gridCellThreshold();
+        if (threshold <= 0) {
+            return meanAbsDiff == 0 ? 1.0 : 0.0;
+        }
+        return Math.max(0.0, 1.0 - (meanAbsDiff / threshold));
     }
 }

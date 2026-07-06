@@ -56,7 +56,8 @@ public record VideoConfig(
         // REQ-FS-5: selection
         double selectionMaxGapSeconds,
         double selectionSimilarityThreshold,
-        double urlBarMandatoryThreshold) {
+        double urlBarMandatoryThreshold,
+        double selectionMinGapSeconds) {
 
     public static VideoConfig defaults() {
         return new VideoConfig(
@@ -68,7 +69,7 @@ public record VideoConfig(
                 5, 0.20, 4, 0.1,
                 4, 2, 2.0,
                 0.3, 1.5, 0.3,
-                8.0, 0.92, 0.30);
+                8.0, 0.92, 0.30, 0.5);
     }
 
     public VideoConfig withDebugFramesDir(String dir) {
@@ -83,7 +84,8 @@ public record VideoConfig(
                 patternAnimationWindow, patternAnimationVarianceThreshold, patternAnimationMinFrames, patternAnimationPenalty,
                 patternElementMinClusterSize, patternElementPersistFrames, patternElementBonus,
                 patternScrollThreshold, patternScrollEndBonus, patternScrollMidPenalty,
-                selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold);
+                selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold,
+                selectionMinGapSeconds);
     }
 
     /** Override max frames (UI / CLI). */
@@ -99,7 +101,8 @@ public record VideoConfig(
                 patternAnimationWindow, patternAnimationVarianceThreshold, patternAnimationMinFrames, patternAnimationPenalty,
                 patternElementMinClusterSize, patternElementPersistFrames, patternElementBonus,
                 patternScrollThreshold, patternScrollEndBonus, patternScrollMidPenalty,
-                selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold);
+                selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold,
+                selectionMinGapSeconds);
     }
 
     /** Legacy constructor mapping for {@link com.sailpoint.poc.uiagent.video.VideoFrameExtractor}. */
@@ -123,6 +126,7 @@ public record VideoConfig(
                 d.patternAnimationWindow(), d.patternAnimationVarianceThreshold(), d.patternAnimationMinFrames(), d.patternAnimationPenalty(),
                 d.patternElementMinClusterSize(), d.patternElementPersistFrames(), d.patternElementBonus(),
                 d.patternScrollThreshold(), d.patternScrollEndBonus(), d.patternScrollMidPenalty(),
-                d.selectionMaxGapSeconds(), d.selectionSimilarityThreshold(), d.urlBarMandatoryThreshold());
+                d.selectionMaxGapSeconds(), d.selectionSimilarityThreshold(), d.urlBarMandatoryThreshold(),
+                d.selectionMinGapSeconds());
     }
 }

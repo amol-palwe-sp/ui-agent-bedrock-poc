@@ -15,9 +15,14 @@ public final class FrameScorer {
     }
 
     public ScoredFrame score(int frameIndex, double frameTime, GridDiffResult diff) {
+        return score(frameIndex, frameTime, diff, null);
+    }
+
+    public ScoredFrame score(int frameIndex, double frameTime, GridDiffResult diff, double[][] fingerprint) {
         ScoredFrame frame = new ScoredFrame(frameIndex, frameTime, diff);
         frame.setRawScore(diff.weightedScore());
         frame.setFinalScore(diff.weightedScore());
+        frame.setFingerprint(fingerprint);
         return frame;
     }
 }

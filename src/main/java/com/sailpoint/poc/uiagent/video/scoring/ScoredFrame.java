@@ -20,6 +20,7 @@ public final class ScoredFrame {
     private PatternType patternType;
     private boolean mandatory;
     private byte[] jpegBytes;
+    private double[][] fingerprint;
 
     public ScoredFrame(int frameIndex, double frameTime, GridDiffResult diff) {
         this.frameIndex = frameIndex;
@@ -82,6 +83,15 @@ public final class ScoredFrame {
 
     public void setJpegBytes(byte[] jpegBytes) {
         this.jpegBytes = jpegBytes;
+    }
+
+    /** Per-cell mean-intensity fingerprint used for direct frame-vs-frame dedup comparisons. */
+    public double[][] fingerprint() {
+        return fingerprint;
+    }
+
+    public void setFingerprint(double[][] fingerprint) {
+        this.fingerprint = fingerprint;
     }
 
     public int changedCells() {

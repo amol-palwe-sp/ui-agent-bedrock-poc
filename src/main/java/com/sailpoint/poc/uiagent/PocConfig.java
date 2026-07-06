@@ -310,6 +310,16 @@ public final class PocConfig {
         return Double.parseDouble(optional("video.url.bar.mandatory.threshold", "0.30"));
     }
 
+    /**
+     * Minimum seconds between two non-mandatory frames picked during the initial greedy,
+     * score-ranked selection pass. Prevents one high-motion moment from consuming the whole
+     * frame budget; {@code enforceCoverage} can still add frames closer together afterwards if a
+     * resulting time gap is too large. Set to {@code 0} to disable. Defaults to 0.5.
+     */
+    public double videoSelectionMinGapSeconds() {
+        return Double.parseDouble(optional("video.selection.min.gap.seconds", "0.5"));
+    }
+
     private static int clampGrid(int size) {
         return Math.max(4, Math.min(32, size));
     }
@@ -445,7 +455,7 @@ public final class PocConfig {
                 videoPatternElementMinClusterSize(), videoPatternElementPersistFrames(), videoPatternElementBonus(),
                 videoPatternScrollThreshold(), videoPatternScrollEndBonus(), videoPatternScrollMidPenalty(),
                 videoSelectionMaxGapSeconds(), videoSelectionSimilarityThreshold(),
-                videoUrlBarMandatoryThreshold());
+                videoUrlBarMandatoryThreshold(), videoSelectionMinGapSeconds());
     }
 
     /**

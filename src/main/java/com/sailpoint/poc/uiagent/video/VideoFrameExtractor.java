@@ -155,8 +155,9 @@ public final class VideoFrameExtractor {
             GridDiffResult diff = previousGray == null
                     ? diffCalc.firstFrame()
                     : diffCalc.compute(previousGray, currentGray);
+            double[][] fingerprint = diffCalc.fingerprint(currentGray);
 
-            candidates.add(scorer.score(frameIndex, frameTime, diff));
+            candidates.add(scorer.score(frameIndex, frameTime, diff, fingerprint));
 
             if (previousGray != null) {
                 previousGray.release();
@@ -172,16 +173,33 @@ public final class VideoFrameExtractor {
         return new ScanResult(candidates, frameIndex);
     }
 
+    /**
+     * Marks the first frame, plus one mandatory frame per URL-bar-change event (REQ-FS-2 /
+     * REQ-FS-5). A URL bar animating/typing character-by-character produces a whole RUN of
+     * consecutive significant frames; only the LAST frame of each run — the settled URL — is
+     * kept mandatory. This avoids forcing every intermediate frame of an address-bar edit into
+     * the selection, which previously could blow the frame budget with no cap.
+     */
     private void markMandatory(List<ScoredFrame> frames, ZoneWeightMap zoneMap) {
-        if (!frames.isEmpty()) {
-            ScoredFrame first = frames.get(0);
-            first.setMandatory(true);
-            first.setPatternType(PatternType.MANDATORY);
+        if (frames.isEmpty()) {
+            return;
         }
-        for (ScoredFrame f : frames) {
-            if (urlBarSignificant(f.diff(), zoneMap)) {
-                f.setMandatory(true);
+        ScoredFrame first = frames.get(0);
+        first.setMandatory(true);
+        first.setPatternType(PatternType.MANDATORY);
+
+        int i = 0;
+        while (i < frames.size()) {
+            if (!urlBarSignificant(frames.get(i).diff(), zoneMap)) {
+                i++;
+                continue;
             }
+            int runEnd = i;
+            while (runEnd + 1 < frames.size() && urlBarSignificant(frames.get(runEnd + 1).diff(), zoneMap)) {
+                runEnd++;
+            }
+            frames.get(runEnd).setMandatory(true);
+            i = runEnd + 1;
         }
     }
 
