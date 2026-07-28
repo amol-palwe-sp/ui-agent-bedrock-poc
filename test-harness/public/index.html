@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UI-Agent Test Harness — Scenario Catalog</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>UI-Agent Test Harness</h1><span style="font-size:13px">localhost:4599</span></header>
+  <main style="max-width:1000px;">
+    <div class="card">
+      <h2>Scenario catalog</h2>
+      <p class="subtitle">Deterministic dummy apps for evaluating script generation, navigation, and aggregation reliability.
+        Each row shows the target mechanism, a ready-to-run agent goal, and the expected verdict.</p>
+      <p>
+        <span class="pill ok">Pass</span> native code path &nbsp;
+        <span class="pill warn">Ladder</span> works via generic CLICK/TYPE &nbsp;
+        <span class="pill gap">Roadmap gap</span> no dedicated support (expected-fail)
+      </p>
+      <p class="subtitle">Login fixtures: <code>test.user@demo.local</code> / <code>Demo!Pass123</code>.
+        Replace <code>BASE</code> below with <code>http://localhost:4599</code> in your <code>--url</code>.</p>
+    </div>
+    <div id="catalog"></div>
+  </main>
+
+  <script>
+  const B = 'http://localhost:4599';
+  const V = { ok: 'ok', ladder: 'warn', gap: 'gap' };
+  const VL = { ok: 'Pass', ladder: 'Ladder', gap: 'Roadmap gap' };
+
+  const SCENARIOS = [
+    { tier: 'A — Discovery & structure', items: [
+      { name: 'semantic-form', path: '/a-discovery/semantic-form.html', v: 'ok', mech: 'Baseline semantic <input>/<button>', goal: 'enter "test.user@demo.local" in the Email field, then enter "Demo!Pass123" in the Password field, then click the Sign in button' },
+      { name: 'div-role-widgets', path: '/a-discovery/div-role-widgets.html', v: 'ok', mech: 'div[role=button] + contenteditable', goal: 'click the Username field and enter "jdoe", then click the Notes area and enter "hello", then click the Submit button' },
+      { name: 'aria-combobox', path: '/a-discovery/aria-combobox.html', v: 'ok', mech: 'Custom ARIA combobox (role=option) — SELECT_OPTION ladder', goal: 'select "Engineering" from the Department dropdown, then click Save' },
+      { name: 'dup-labels', path: '/a-discovery/dup-labels.html', v: 'ok', mech: 'Two identical "Next" buttons — stableIdOrdinal', goal: 'click the second Next button' },
+      { name: 'random-ids', path: '/a-discovery/random-ids.html', v: 'ok', mech: 'IDs randomized each load — fingerprint fallback > level 1', goal: 'enter "hello world" in the Search field, then click the Search button' },
+      { name: 'same-origin-iframe', path: '/a-discovery/same-origin-iframe.html', v: 'ok', mech: 'Same-origin iframe (contentDocument scrape)', goal: 'enter "in-frame text" in the Message field inside the frame, then click Send' },
+      { name: 'cross-origin-iframe', path: '/a-discovery/cross-origin-iframe.html', v: 'gap', mech: 'Cross-origin iframe — NOT scraped', goal: 'enter text in the field inside the embedded frame, then click Submit' },
+      { name: 'shadow-dom-form', path: '/a-discovery/shadow-dom-form.html', v: 'gap', mech: 'Open shadow-root web component — no shadowRoot traversal', goal: 'enter "shadow value" in the Full name field, then click Save' },
+    ]},
+    { tier: 'A-Fields — one page per input type', items: [
+      { name: 'text-inputs', path: '/a-fields/text-inputs.html', v: 'ok', mech: 'text/email/password/number/tel', goal: 'enter "Ada" in First name, "Lovelace" in Last name, "ada@demo.local" in Email, then click Save' },
+      { name: 'textarea-richtext', path: '/a-fields/textarea-richtext.html', v: 'ok', mech: 'textarea + contenteditable rich text', goal: 'enter "line one" in the Description field, then enter "rich body" in the Rich notes area, then click Save' },
+      { name: 'native-select', path: '/a-fields/native-select.html', v: 'ok', mech: 'Native <select>', goal: 'select "Finance" from the Department dropdown, then click Save' },
+      { name: 'aria-combobox-select', path: '/a-fields/aria-combobox-select.html', v: 'ok', mech: 'Custom listbox combobox', goal: 'select "Marketing" from the Team dropdown, then click Save' },
+      { name: 'typeahead-autocomplete', path: '/a-fields/typeahead-autocomplete.html', v: 'ladder', mech: 'Type -> filtered options -> click', goal: 'type "eng" in the Team search, then click the Engineering option, then click Save' },
+      { name: 'cascading-dropdowns', path: '/a-fields/cascading-dropdowns.html', v: 'ladder', mech: 'Dependent dropdowns (country -> state)', goal: 'select "United States" from Country, then select "California" from State, then click Save' },
+      { name: 'checkbox-group', path: '/a-fields/checkbox-group.html', v: 'ladder', mech: 'Select several checkboxes', goal: 'check "Email" and "SMS" notification options, then click Save' },
+      { name: 'radio-group', path: '/a-fields/radio-group.html', v: 'ladder', mech: 'Radio group', goal: 'select the "Premium" plan, then click Continue' },
+      { name: 'toggle-switch', path: '/a-fields/toggle-switch.html', v: 'ladder', mech: 'role=switch toggle', goal: 'turn on the "Enable notifications" toggle, then click Save' },
+      { name: 'segmented-otp', path: '/a-fields/segmented-otp.html', v: 'ladder', mech: 'One box per digit', goal: 'enter the code 1 2 3 4 5 6 into the verification boxes, then click Verify' },
+      { name: 'masked-input', path: '/a-fields/masked-input.html', v: 'ladder', mech: 'Phone/SSN masked formatting', goal: 'enter "4155550123" in the Phone field, then click Save' },
+      { name: 'star-rating', path: '/a-fields/star-rating.html', v: 'ladder', mech: 'Clickable icon rating', goal: 'set the rating to 4 stars, then click Submit' },
+      { name: 'transfer-list', path: '/a-fields/transfer-list.html', v: 'ladder', mech: 'Dual listbox move', goal: 'move "Reports" from Available to Selected, then click Save' },
+      { name: 'multiselect-chips', path: '/a-fields/multiselect-chips.html', v: 'gap', mech: 'Multi-select with chips — no multi-select action', goal: 'select "Engineering" and "Finance" tags in the Groups field, then click Save' },
+      { name: 'date-picker', path: '/a-fields/date-picker.html', v: 'gap', mech: 'Calendar popup — no date action', goal: 'set the Start date to 15 August 2026 using the calendar, then click Save' },
+      { name: 'date-range-time', path: '/a-fields/date-range-time.html', v: 'gap', mech: 'Range + time picker', goal: 'set the range from 10 to 20 August 2026 and time 14:30, then click Save' },
+      { name: 'slider-range', path: '/a-fields/slider-range.html', v: 'gap', mech: 'Range slider drag — no drag/range action', goal: 'set the Budget slider to 750, then click Save' },
+      { name: 'file-upload', path: '/a-fields/file-upload.html', v: 'gap', mech: 'File input — setInputFiles not exposed', goal: 'upload a file in the Attachment field, then click Save' },
+      { name: 'drag-reorder', path: '/a-fields/drag-reorder.html', v: 'gap', mech: 'Drag-to-reorder — no drag action', goal: 'drag "Task C" above "Task A", then click Save' },
+    ]},
+    { tier: 'B — Navigation steps', items: [
+      { name: 'multipage-wizard', path: '/b-navigation/multipage-wizard-1.html', v: 'ok', mech: 'Classic multi-page (URL changes) — expectedUrlPattern', goal: 'enter "Ada" in Name then click Next, then select "Finance" from Department then click Next, then click Finish' },
+      { name: 'spa-router', path: '/b-navigation/spa-router.html', v: 'ladder', mech: 'SPA pushState route change (no reload)', goal: 'click Products, then click Settings, then click the Save preferences button' },
+      { name: 'modal-overlay', path: '/b-navigation/modal-overlay.html', v: 'ok', mech: 'Modal/overlay step', goal: 'click Open dialog, then enter "confirmed" in the Reason field, then click Confirm' },
+      { name: 'native-alert-confirm', path: '/b-navigation/native-alert-confirm.html', v: 'ok', mech: 'Native alert/confirm auto-dismiss', goal: 'click the Delete item button, then click the Continue button' },
+      { name: 'popup-newtab', path: '/b-navigation/popup-newtab.html', v: 'ok', mech: 'New tab / popup following', goal: 'click Open helper window, then enter "code123" in the Code field, then click Apply' },
+      { name: 'slow-spinner-skeleton', path: '/b-navigation/slow-spinner-skeleton.html', v: 'ok', mech: 'Spinner/skeleton settle wait', goal: 'click Load profile, then after it loads enter "Ada" in the Name field, then click Save' },
+      { name: 'conditional-branch-wizard', path: '/b-navigation/conditional-branch-wizard.html', v: 'ladder', mech: 'Branching wizard', goal: 'select "Business" account type then click Next, then enter "Acme Inc" in Company then click Finish' },
+      { name: 'tabbed-nav', path: '/b-navigation/tabbed-nav.html', v: 'ladder', mech: 'role=tab navigation', goal: 'click the Billing tab, then enter "4242" in the Card field, then click Save' },
+      { name: 'accordion-tree-nav', path: '/b-navigation/accordion-tree-nav.html', v: 'ladder', mech: 'Accordion/tree expand', goal: 'expand the Administration section, then click Users, then click Add' },
+      { name: 'hover-megamenu', path: '/b-navigation/hover-megamenu.html', v: 'gap', mech: 'Hover-triggered mega-menu — no hover action', goal: 'hover Products to open the menu, then click Analytics' },
+    ]},
+    { tier: 'C — Replay resilience (record v1, replay v2..v7)', items: [
+      { name: 'provisioning (v1 baseline)', path: '/c-replay/provisioning.html?variant=1', v: 'ok', mech: 'Record here. Replay on ?variant=2..7 (reorder / classes / ids / wrappers / i18n / theme). Report survival per fingerprintLevel.', goal: 'enter "Ada" in First name, "Lovelace" in Last name, "ada@demo.local" in Email, select "Engineering" from Department, then click Create user' },
+    ]},
+    { tier: 'D — Aggregation / pagination', items: [
+      { name: 'table-numbered', path: '/d-aggregation/table-numbered.html', v: 'ok', mech: 'Classic <table> + numbered pages (page_numbers)', goal: 'scrape all accounts across all pages' },
+      { name: 'grid-nextbtn', path: '/d-aggregation/grid-nextbtn.html', v: 'ok', mech: 'role=grid + Next button (next_button)', goal: 'scrape all accounts by clicking Next until the last page' },
+      { name: 'load-more', path: '/d-aggregation/load-more.html', v: 'ok', mech: '"Load more" button (load_more)', goal: 'scrape all accounts, clicking Load more until it disappears' },
+      { name: 'infinite-scroll', path: '/d-aggregation/infinite-scroll.html', v: 'ok', mech: 'Infinite scroll (infinite_scroll)', goal: 'scrape all accounts by scrolling to load more' },
+      { name: 'virtualized-list', path: '/d-aggregation/virtualized-list.html', v: 'ladder', mech: 'Windowed list (~20 rows in DOM at a time)', goal: 'scrape all accounts from the virtualized list' },
+      { name: 'cursor-pagination', path: '/d-aggregation/cursor-pagination.html', v: 'ladder', mech: 'Cursor "load after" (no page index)', goal: 'scrape all accounts by clicking Next until no more' },
+      { name: 'url-param-pagination', path: '/d-aggregation/url-param-pagination.html', v: 'ladder', mech: '?page=N via GOTO', goal: 'scrape all accounts across pages' },
+      { name: 'page-size-selector', path: '/d-aggregation/page-size-selector.html', v: 'ladder', mech: 'Page-size selector + pagination', goal: 'set page size to 100, then scrape all accounts across pages' },
+      { name: 'merged-headers', path: '/d-aggregation/merged-headers.html', v: 'ladder', mech: 'Grouped/merged column headers', goal: 'scrape all accounts across all pages' },
+    ]},
+  ];
+
+  const root = document.getElementById('catalog');
+  for (const group of SCENARIOS) {
+    const sec = document.createElement('section');
+    sec.className = 'tier';
+    sec.innerHTML = `<h3>${group.tier}</h3>`;
+    for (const s of group.items) {
+      const el = document.createElement('div');
+      el.className = 'scenario';
+      const cmd = `./gradlew run --args='--url=${B}${s.path} --goal=${s.goal}'`;
+      el.innerHTML = `
+        <div class="top">
+          <a class="name" href="${s.path}" target="_blank" rel="noopener">${s.name}</a>
+          <span class="pill ${V[s.v]}">${VL[s.v]}</span>
+        </div>
+        <div class="mech">${s.mech}</div>
+        <code class="goal">${cmd.replace(/</g,'&lt;')}</code>`;
+      sec.appendChild(el);
+    }
+    root.appendChild(sec);
+  }
+  </script>
+</body>
+</html>

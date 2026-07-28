@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Branching wizard — Navigation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Conditional wizard</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Branching flow <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">The next step depends on the earlier choice — tests the agent adapting to a re-observed DOM.</p>
+    <div id="s1">
+      <label for="type">Account type</label>
+      <select id="type" aria-label="Account type"><option value="">Choose…</option><option>Personal</option><option>Business</option></select>
+      <div style="margin-top:16px;"><button onclick="next1()">Next</button></div>
+    </div>
+    <div id="s2" style="display:none;"></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Finished.</div>
+  </div></main>
+  <script>
+    function next1(){const t=document.getElementById('type').value;const s2=document.getElementById('s2');document.getElementById('s1').style.display='none';s2.style.display='block';
+      if(t==='Business'){s2.innerHTML='<label for="co">Company</label><input id="co" aria-label="Company"/><div style="margin-top:16px"><button onclick="fin()">Finish</button></div>';}
+      else{s2.innerHTML='<label for="nm">Full name</label><input id="nm" aria-label="Full name"/><div style="margin-top:16px"><button onclick="fin()">Finish</button></div>';}}
+    function fin(){document.getElementById('ok').style.display='block';}
+  </script>
+</body>
+</html>

@@ -11,6 +11,8 @@
   let isGenerating    = false;
   let isRunning       = false;
   let cachedScripts   = [];
+  let part1Metrics    = null; // { frames, inputTokens, outputTokens, costUsd } from generate
+  let part2Metrics    = null; // { steps, inputTokens, outputTokens, costUsd, exitReason } from run
 
   // ── Element refs ───────────────────────────────────────────────────────────
   const dropZone               = document.getElementById('dropZone');
@@ -61,6 +63,13 @@
   const confidenceWarningsList = document.getElementById('confidenceWarningsList');
   const evalToggle             = document.getElementById('evalToggle');
   const evalToggleBadge        = document.getElementById('evalToggleBadge');
+  const sectionMetrics         = document.getElementById('sectionMetrics');
+  const metricsSystem          = document.getElementById('metricsSystem');
+  const metricsRun             = document.getElementById('metricsRun');
+  const metricsHeaderToggle    = document.getElementById('metricsHeaderToggle');
+  const btnCopyMetrics         = document.getElementById('btnCopyMetrics');
+  const metricsTableHead       = document.getElementById('metricsTableHead');
+  const metricsTableBody       = document.getElementById('metricsTableBody');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
@@ -87,6 +96,9 @@
       doRun();
     });
     btnGoBack.addEventListener('click', hideWarningBanner);
+    if (btnCopyMetrics) btnCopyMetrics.addEventListener('click', copyMetricsForConfluence);
+    if (metricsSystem) metricsSystem.addEventListener('input', renderMetricsTable);
+    if (metricsRun) metricsRun.addEventListener('input', renderMetricsTable);
   });
 
   // ── Drop Zone ──────────────────────────────────────────────────────────────
@@ -176,6 +188,15 @@
         showValidationBadge(data.isValid, data.issues || []);
         showTokenInfo(data.inputTokens, data.outputTokens, data.costUsd);
         showConfidencePanel(data);
+
+        // Capture Part 1 (video → script) metrics for the Run Metrics block
+        part1Metrics = {
+          frames:       data.frameCount   || 0,
+          inputTokens:  data.inputTokens  || 0,
+          outputTokens: data.outputTokens || 0,
+          costUsd:      data.costUsd      || 0
+        };
+
         unlockSection(sectionScript);
         loadScripts();
         updateRunModeUI();
@@ -750,6 +771,7 @@
           break;
         case 'error':       showError(data.message);                                           break;
         case 'token_usage': showExecTokenInfo(data.inputTokens, data.outputTokens, data.costUsd); break;
+        case 'run_stats':   handleRunStats(data);                                               break;
       }
     };
 
@@ -785,6 +807,146 @@
     toast.textContent = msg;
     toastContainer.appendChild(toast);
     setTimeout(function () { toast.remove(); }, 6000);
+  }
+
+  // ── Run Metrics (copy for Confluence) ──────────────────────────────────────
+
+  function handleRunStats(data) {
+    part2Metrics = {
+      steps:        data.steps        || 0,
+      inputTokens:  data.inputTokens  || 0,
+      outputTokens: data.outputTokens || 0,
+      costUsd:      data.costUsd      || 0,
+      exitReason:   data.exitReason   || ''
+    };
+    renderMetricsTable();
+    if (sectionMetrics) sectionMetrics.classList.remove('locked');
+  }
+
+  // Builds the ordered list of { label, value } cells for the current run.
+  // Part 1 values come from the last "Generate"; Part 2 from the last run.
+  function computeMetricsCells() {
+    const p1 = part1Metrics || {};
+    const p2 = part2Metrics || {};
+
+    const p1Cost = num(p1.costUsd);
+    const p2Cost = num(p2.costUsd);
+    const steps  = num(p2.steps);
+    const perStep = steps > 0 ? p2Cost / steps : 0;
+    const totalCost = p1Cost + p2Cost;
+
+    return [
+      { label: 'System',        value: (metricsSystem.value || '').trim() },
+      { label: 'Run',           value: (metricsRun.value || '').trim() },
+      { label: 'P1 Frames',     value: String(num(p1.frames)) },
+      { label: 'P1 Input',      value: String(num(p1.inputTokens)) },
+      { label: 'P1 Output',     value: String(num(p1.outputTokens)) },
+      { label: 'P1 Cost ($)',   value: p1Cost.toFixed(4) },
+      { label: 'P2 Steps',      value: String(steps) },
+      { label: 'P2 Input',      value: String(num(p2.inputTokens)) },
+      { label: 'P2 Output',     value: String(num(p2.outputTokens)) },
+      { label: 'P2 Cost ($)',   value: p2Cost.toFixed(4) },
+      { label: 'Cost/Step ($)', value: perStep.toFixed(6) },
+      { label: 'Total Cost ($)', value: totalCost.toFixed(4) },
+      { label: 'Exit Reason',   value: p2.exitReason || '' }
+    ];
+  }
+
+  function renderMetricsTable() {
+    if (!metricsTableHead || !metricsTableBody) return;
+    const cells = computeMetricsCells();
+
+    const headRow = document.createElement('tr');
+    cells.forEach(function (c) {
+      const th = document.createElement('th');
+      th.textContent = c.label;
+      headRow.appendChild(th);
+    });
+    metricsTableHead.innerHTML = '';
+    metricsTableHead.appendChild(headRow);
+
+    const bodyRow = document.createElement('tr');
+    cells.forEach(function (c) {
+      const td = document.createElement('td');
+      td.textContent = c.value;
+      bodyRow.appendChild(td);
+    });
+    metricsTableBody.innerHTML = '';
+    metricsTableBody.appendChild(bodyRow);
+  }
+
+  function copyMetricsForConfluence() {
+    if (!part2Metrics) {
+      showError('Run a script first — no metrics to copy yet.');
+      return;
+    }
+    const cells = computeMetricsCells();
+    const includeHeader = metricsHeaderToggle ? metricsHeaderToggle.checked : true;
+
+    const headers = cells.map(function (c) { return c.label; });
+    const values  = cells.map(function (c) { return c.value; });
+
+    // Plain-text TSV (spreadsheets + Confluence both accept it)
+    const tsvLines = [];
+    if (includeHeader) tsvLines.push(headers.join('\t'));
+    tsvLines.push(values.join('\t'));
+    const tsv = tsvLines.join('\n');
+
+    // HTML table — Confluence turns this into a native table on paste
+    let html = '<table><tbody>';
+    if (includeHeader) {
+      html += '<tr>' + headers.map(function (h) {
+        return '<th>' + escapeHtml(h) + '</th>';
+      }).join('') + '</tr>';
+    }
+    html += '<tr>' + values.map(function (v) {
+      return '<td>' + escapeHtml(v) + '</td>';
+    }).join('') + '</tr>';
+    html += '</tbody></table>';
+
+    writeClipboard(html, tsv)
+      .then(function () { showToast('Copied — paste into Confluence'); })
+      .catch(function () { showError('Copy failed — select the table manually.'); });
+  }
+
+  function writeClipboard(html, text) {
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        const item = new ClipboardItem({
+          'text/html':  new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        });
+        return navigator.clipboard.write([item]);
+      } catch (e) { /* fall through */ }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        resolve();
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function num(v) {
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
   }
 
   function updateProgress(data) {

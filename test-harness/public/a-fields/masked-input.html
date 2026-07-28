@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Masked input — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Masked input</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Auto-formatting fields <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Phone reformats as you type — tests that TYPE tolerates value transformation.</p>
+    <label for="ph">Phone</label>
+    <input type="tel" id="ph" aria-label="Phone" placeholder="(___) ___-____" oninput="mask(this)" />
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    function mask(el){let d=el.value.replace(/\D/g,'').slice(0,10);let o='';if(d.length>0)o='('+d.slice(0,3);if(d.length>=4)o+=') '+d.slice(3,6);if(d.length>=7)o+='-'+d.slice(6);el.value=o;}
+  </script>
+</body>
+</html>

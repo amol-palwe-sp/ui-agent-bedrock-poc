@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Typeahead — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.ac{position:relative;max-width:340px}.ac ul{list-style:none;margin:4px 0 0;padding:4px;border:1px solid var(--line);border-radius:8px;background:#fff;position:absolute;left:0;right:0;z-index:5}
+  .ac li{padding:8px 10px;border-radius:6px;cursor:pointer}.ac li:hover{background:#eef2fb}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Typeahead / autocomplete</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Filter-as-you-type <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Type to filter, then click an option — TYPE followed by CLICK.</p>
+    <label for="q">Team search</label>
+    <div class="ac">
+      <input type="text" id="q" aria-label="Team search" autocomplete="off" oninput="flt(this.value)" />
+      <ul id="opts"></ul>
+    </div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;"></div>
+  </div></main>
+  <script>
+    const TEAMS=['Engineering','Finance','Marketing','Support','Legal','Sales'];const opts=document.getElementById('opts');
+    function flt(v){opts.innerHTML='';if(!v)return;TEAMS.filter(t=>t.toLowerCase().includes(v.toLowerCase())).forEach(t=>{const li=document.createElement('li');li.setAttribute('role','option');li.textContent=t;li.onclick=()=>{document.getElementById('q').value=t;opts.innerHTML='';};opts.appendChild(li);});}
+    document.querySelector('button').onclick=()=>{const o=document.getElementById('ok');o.textContent='Saved: '+document.getElementById('q').value;o.style.display='block';};
+  </script>
+</body>
+</html>

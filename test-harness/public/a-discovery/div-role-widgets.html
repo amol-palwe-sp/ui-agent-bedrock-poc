@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>div[role] widgets — Discovery</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .fake-input{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:20px;background:#fff;cursor:text;}
+    .fake-input:empty::before{content:attr(data-ph);color:#98a2b3;}
+    .fake-btn{display:inline-block;background:var(--brand);color:#fff;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;user-select:none;}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>div[role] widgets</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <h2>Non-native controls <span class="pill ok">Pass</span></h2>
+      <p class="subtitle">Inputs are <code>contenteditable</code> divs; the button is a <code>div[role=button]</code> — mirrors real Google-admin style widgets.</p>
+      <label>Username</label>
+      <div class="fake-input" role="textbox" aria-label="Username" contenteditable="true" data-ph="Type username"></div>
+      <label>Notes</label>
+      <div class="fake-input" role="textbox" aria-label="Notes" contenteditable="true" data-ph="Type notes" style="min-height:60px;"></div>
+      <div style="margin-top:18px;">
+        <div class="fake-btn" role="button" tabindex="0" aria-label="Submit" onclick="document.getElementById('ok').style.display='block'">Submit</div>
+      </div>
+      <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Submitted.</div>
+    </div>
+  </main>
+</body>
+</html>

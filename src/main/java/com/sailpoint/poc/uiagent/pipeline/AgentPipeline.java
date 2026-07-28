@@ -7,6 +7,7 @@ import com.sailpoint.poc.uiagent.aggregation.AccountAggregator;
 import com.sailpoint.poc.uiagent.aggregation.AggregationMode;
 import com.sailpoint.poc.uiagent.aggregation.NetworkAggregator;
 import com.sailpoint.poc.uiagent.aggregation.TableDetectionResult;
+import com.microsoft.playwright.options.LoadState;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import com.sailpoint.poc.uiagent.replay.ReplayResult;
@@ -140,28 +141,35 @@ public final class AgentPipeline {
 
                 // ── Run AgentLoop (single loop for both modes — REQ-NA-44) ────
                 pl.onStatusChange(PipelineStatus.AGENT_RUNNING);
-                String resolvedGoal = config.resolvedGoal();
+                // SECURITY (secret isolation): feed the *tokenized* goal to the LLM. Real secret
+                // values are resolved only at Playwright type-time inside AgentLoop.withTokens and
+                // never enter the prompt, history, or logs. resolvedGoal() is intentionally NOT used
+                // for the prompt anymore.
+                String promptGoal = config.goal();
+                TokenValues tokens = TokenValues.fromMap(config.tokenValues());
                 pl.onLog("INFO", "Starting agent loop (goal: "
-                        + resolvedGoal.substring(0, Math.min(80, resolvedGoal.length()))
-                        + (resolvedGoal.length() > 80 ? "…" : "") + ")");
+                        + promptGoal.substring(0, Math.min(80, promptGoal.length()))
+                        + (promptGoal.length() > 80 ? "…" : "") + ")");
 
                 ScriptRecorder recorder = null;
                 if (config.isRecord()) {
                     recorder = new ScriptRecorder(
                             config.startUrl(), config.goal(),
-                            config.taskType().name(), config.scriptName());
+                            config.taskType().name(), config.scriptName(), tokens);
                 }
 
                 AgentLoop loop = new AgentLoop(
                         bedrock, browser, actionLogger,
-                        ac.maxSteps(), resolvedGoal, ac.noProgressLimit())
-                        .setMultiViewportMaxFrames(ac.multiViewportMaxFrames());
+                        ac.maxSteps(), promptGoal, ac.noProgressLimit())
+                        .setMultiViewportMaxFrames(ac.multiViewportMaxFrames())
+                        .withTokens(tokens);
                 if (recorder != null) {
                     loop.enableRecording(recorder);
                 }
 
                 TokenUsage loopUsage = loop.run();
                 totalUsage = totalUsage.add(loopUsage);
+                int agentSteps = loop.stepsExecuted();
                 pl.onTokenUsage(totalUsage);
 
                 String finalUrl = browser.currentUrl();
@@ -181,8 +189,50 @@ public final class AgentPipeline {
                 if (!config.isAggregation()) {
                     // PROVISIONING: pipeline is done
                     pl.onStatusChange(PipelineStatus.DONE);
-                    return PipelineResult.provisioningSuccess(totalUsage, finalUrl).build();
+                    return PipelineResult.provisioningSuccess(totalUsage, finalUrl)
+                            .agentSteps(agentSteps).build();
                 }
+
+                // AGGREGATION tail — shared by the live path (here) and REPLAY (runReplay).
+                return finishAggregation(config, pl, browser, bedrock,
+                        totalUsage, agentSteps, networkAggregator, finalUrl);
+            }
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            pl.onLog("WARNING", "Pipeline interrupted by user");
+            pl.onStatusChange(PipelineStatus.INTERRUPTED);
+            return PipelineResult.interrupted(config.taskType(), totalUsage);
+
+        } catch (Exception e) {
+            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
+            pl.onLog("ERROR", msg);
+            pl.onStatusChange(PipelineStatus.FAILED);
+            return PipelineResult.error(config.taskType(), totalUsage, msg);
+
+        } finally {
+            System.setOut(originalOut);
+        }
+    }
+
+    /**
+     * Runs the aggregation tail after navigation has reached the account-list page: NETWORK-mode
+     * settle + direct extraction, otherwise LLM_DOM table detection → pagination → CSV. Shared by
+     * the live path and by {@link #runReplay} so a deterministic replay finishes exactly like a
+     * live run (Phase 1 of the determinism plan).
+     *
+     * @param agentSteps        navigation steps taken (AgentLoop steps live; replay steps on REPLAY)
+     * @param networkAggregator an already-started sniffer when NETWORK mode is active, else {@code null}
+     */
+    private static PipelineResult finishAggregation(
+            PipelineConfig config,
+            ProgressListener pl,
+            BrowserSession browser,
+            BedrockAnthropicClient bedrock,
+            TokenUsage totalUsage,
+            int agentSteps,
+            NetworkAggregator networkAggregator,
+            String finalUrl) throws Exception {
 
                 // ── NETWORK mode: settle wait, stop sniffing, attempt aggregation ──
                 if (networkAggregator != null) {
@@ -231,7 +281,8 @@ public final class AgentPipeline {
                                 totalUsage, finalUrl,
                                 netResult.rows().size(), netResult.pagesCollected(),
                                 csvPath, headers, preview,
-                                AggregationMode.NETWORK).build();
+                                AggregationMode.NETWORK)
+                                .agentSteps(agentSteps).build();
                     }
 
                     // No qualifying payload — check fallback setting (REQ-NA-14)
@@ -240,7 +291,8 @@ public final class AgentPipeline {
                         pl.onStatusChange(PipelineStatus.DONE);
                         return PipelineResult.aggregationSuccess(
                                 totalUsage, finalUrl, 0, 0, "", List.of(), List.of(),
-                                AggregationMode.NETWORK).build();
+                                AggregationMode.NETWORK)
+                                .agentSteps(agentSteps).build();
                     }
 
                     pl.onLog("WARNING", "No network payload found — falling back to LLM_DOM");
@@ -267,11 +319,19 @@ public final class AgentPipeline {
                 pl.onLog("INFO", "Table detected — selector: " + tableResult.selector());
                 pl.onLog("INFO", "Columns: " + String.join(", ", tableResult.headers()));
 
+                // ── LLM_DOM AGGREGATION: expected-total oracle ─────────────────
+                // accumulatedUsage() is batched — all aggregator costs (detectTable +
+                // oracle + pagination) are captured together at the single add() below.
+                Integer expectedTotal = aggregator.detectExpectedTotal(tableResult);
+                pl.onLog("INFO", expectedTotal != null
+                        ? "Detected expected total from page: " + expectedTotal
+                        : "No total indicator found on page — completeness check unavailable");
+
                 // ── LLM_DOM AGGREGATION: pagination loop ──────────────────────
                 pl.onStatusChange(PipelineStatus.AGGREGATING);
                 int maxPages = config.aggregationConfig().maxPages();
                 List<Map<String,String>> allRows = aggregator.paginationLoop(
-                        tableResult, config.paginationPattern(), maxPages);
+                        tableResult, config.paginationPattern(), maxPages, expectedTotal);
                 int pagesScraped = aggregator.pagesScraped();
                 totalUsage = totalUsage.add(aggregator.accumulatedUsage());
                 pl.onTokenUsage(totalUsage);
@@ -305,24 +365,10 @@ public final class AgentPipeline {
                         totalUsage, finalUrl,
                         allRows.size(), pagesScraped,
                         csvPath, headers, preview,
-                        strategyUsed).build();
-            }
-
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            pl.onLog("WARNING", "Pipeline interrupted by user");
-            pl.onStatusChange(PipelineStatus.INTERRUPTED);
-            return PipelineResult.interrupted(config.taskType(), totalUsage);
-
-        } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName();
-            pl.onLog("ERROR", msg);
-            pl.onStatusChange(PipelineStatus.FAILED);
-            return PipelineResult.error(config.taskType(), totalUsage, msg);
-
-        } finally {
-            System.setOut(originalOut);
-        }
+                        strategyUsed)
+                        .agentSteps(agentSteps)
+                        .expectedTotalAccounts(expectedTotal)
+                        .build();
     }
 
     private static PipelineResult runReplay(
@@ -333,17 +379,72 @@ public final class AgentPipeline {
             TokenUsage totalUsage) throws Exception {
         Script script = Script.load(config.scriptPath());
         ReplayConfig replayConfig = new PocConfig().replay();
+
+        // NETWORK aggregation replays: the sniffer must be attached BEFORE navigation, but
+        // replay navigates internally inside ScriptExecutor.replay(). So we start sniffing here
+        // first — mirroring the live-path ordering (see run(): sniff before browser.navigate()).
+        NetworkAggregator networkAggregator = null;
+        if (config.isAggregation() && config.isNetworkMode()) {
+            networkAggregator = new NetworkAggregator(config.networkAggConfig());
+            networkAggregator.startSniffing(browser.page());
+            pl.onLog("INFO", "Aggregation mode: NETWORK — network sniffer active (replay)");
+        }
+
         ScriptExecutor executor = new ScriptExecutor(browser, bedrock, true, replayConfig);
         ReplayResult replay = executor.replay(script, TokenValues.fromMap(config.tokenValues()));
+        // Propagate replay token cost + step count so the UI reports real numbers (not zero).
+        totalUsage = totalUsage.add(replay.totalCost());
         pl.onTokenUsage(totalUsage);
-        if (replay.success()) {
-            pl.onStatusChange(PipelineStatus.DONE);
-            return PipelineResult.provisioningSuccess(totalUsage, browser.currentUrl()).build();
+
+        if (!replay.success()) {
+            pl.onStatusChange(PipelineStatus.FAILED);
+            String err = replay.failedSteps().isEmpty() ? "replay failed"
+                    : replay.failedSteps().get(0).reason();
+            return PipelineResult.error(config.taskType(), totalUsage, err);
         }
-        pl.onStatusChange(PipelineStatus.FAILED);
-        String err = replay.failedSteps().isEmpty() ? "replay failed"
-                : replay.failedSteps().get(0).reason();
-        return PipelineResult.error(config.taskType(), totalUsage, err);
+
+        // PROVISIONING replay is done once navigation succeeds.
+        if (!config.isAggregation()) {
+            pl.onStatusChange(PipelineStatus.DONE);
+            return PipelineResult.provisioningSuccess(totalUsage, browser.currentUrl())
+                    .agentSteps(replay.stepsTotal()).build();
+        }
+
+        // Let the final replayed navigation settle before detecting the table. The live path
+        // gets this for free (AgentLoop observes the settled list page before DONE); replay
+        // returns the instant the last click fires, so without this wait detectTable's JS can
+        // run mid-navigation and fail with "Execution context was destroyed".
+        settleAfterReplay(browser, pl);
+
+        // AGGREGATION replay reached the list page — finish exactly like a live run, but with
+        // zero live LLM navigation calls (Phase 1). replay.stepsTotal() stands in for agentSteps.
+        return finishAggregation(config, pl, browser, bedrock,
+                totalUsage, replay.stepsTotal(), networkAggregator, browser.currentUrl());
+    }
+
+    /**
+     * Waits for the page to quiesce after a replay's final navigation so downstream table
+     * detection does not evaluate JS against a context that is being torn down. Best-effort:
+     * any timeout/exception is swallowed since aggregation has its own retry/fallback paths.
+     */
+    private static void settleAfterReplay(BrowserSession browser, ProgressListener pl) {
+        try {
+            // The replay returns the instant the final click fires; a full-page navigation it
+            // triggered may not have committed yet. Sleep briefly so waitForLoadState observes
+            // the *new* page rather than resolving instantly against the old (already-loaded) one.
+            Thread.sleep(1_000);
+            browser.page().waitForLoadState(LoadState.DOMCONTENTLOADED,
+                    new com.microsoft.playwright.Page.WaitForLoadStateOptions().setTimeout(8_000));
+            try {
+                browser.page().waitForLoadState(LoadState.NETWORKIDLE,
+                        new com.microsoft.playwright.Page.WaitForLoadStateOptions().setTimeout(3_000));
+            } catch (Exception ignored) {
+                // networkidle is best-effort; DOMCONTENTLOADED is the hard requirement.
+            }
+            pl.onLog("INFO", "Replay navigation settled — starting aggregation.");
+        } catch (Exception e) {
+            pl.onLog("WARNING", "Replay settle wait timed out — proceeding to aggregation anyway.");
+        }
     }
 
     // ── CSV helpers ───────────────────────────────────────────────────────────

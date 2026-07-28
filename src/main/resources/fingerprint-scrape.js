@@ -73,6 +73,28 @@
     return parts.join('>');
   }
 
+  /**
+   * Viewport-independent structural identity (Skyvern-inspired). Combines stable signals — tag,
+   * role, type, name, aria-label, placeholder, href, normalized text, and the semantic ancestor
+   * path — while deliberately excluding our injected data-ui-agent-id and volatile geometry. Used
+   * at replay to remap an element by content even when its fingerprint hash / id churned.
+   */
+  function computeStructuralHash(el) {
+    const tag = (el.tagName || '').toLowerCase();
+    const parts = [
+      tag,
+      el.getAttribute('role') || '',
+      (el.getAttribute('type') || '').toLowerCase(),
+      el.getAttribute('name') || '',
+      el.getAttribute('aria-label') || '',
+      el.getAttribute('placeholder') || '',
+      (el.getAttribute('href') || '').slice(0, 200),
+      sanitize(el.innerText || el.textContent || '', 80),
+      getSemanticPath(el)
+    ];
+    return toHex(djb2Hash(parts.join('|')));
+  }
+
   function computeFingerprint(el, doc) {
     const tag = el.tagName.toLowerCase();
     const type = (el.getAttribute('type') || '').toLowerCase();
@@ -129,6 +151,12 @@
       if (sel && fallbacks.indexOf(sel) < 0) fallbacks.push(sel);
     }
 
+    // Test-automation attributes are the most stable selectors when present.
+    const testAttrs = ['data-testid', 'data-test', 'data-qa', 'data-automation-id', 'data-cy'];
+    for (const attr of testAttrs) {
+      const v = el.getAttribute(attr);
+      if (v) add(tag + "[" + attr + "='" + escAttr(v) + "']");
+    }
     if (id) {
       add(tag + '#' + CSS.escape(id));
     }
@@ -147,7 +175,12 @@
     if (name) {
       add(tag + "[name='" + escAttr(name) + "']");
     }
-    return fallbacks.slice(0, 5);
+    // Role as a last-resort querySelector-safe hint (may be broad; ordered last).
+    const role = el.getAttribute('role');
+    if (role) {
+      add(tag + "[role='" + escAttr(role) + "']");
+    }
+    return fallbacks.slice(0, 6);
   }
 
   function isVisible(el) {
@@ -204,6 +237,7 @@
         id: stableId,
         fingerprintString: fp,
         fingerprintLevel: level,
+        structuralHash: computeStructuralHash(el),
         stableIdOrdinal: ordinal,
         fallbackSelectors: buildFallbacks(el),
         elementLabel: label,

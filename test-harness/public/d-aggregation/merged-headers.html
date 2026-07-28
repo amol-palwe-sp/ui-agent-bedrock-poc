@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Merged headers — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.pages{display:flex;gap:4px;flex-wrap:wrap}.pages button.active{background:#0d47c9}th{text-align:center}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Merged / grouped headers</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <div class="gap-note"><strong>Ladder:</strong> two-row header with <code>colspan</code> groups. Column detection must map data cells to the correct leaf header, not the group header.</div>
+    <h2>Grouped column headers <span class="pill warn">Ladder</span></h2>
+    <table>
+      <thead>
+        <tr><th colspan="2">Identity</th><th colspan="2">Account</th></tr>
+        <tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="toolbar"><div class="pages" id="pages"></div><span class="status" id="stat"></span></div>
+  </div></main>
+  <script>
+    const SIZE=25;
+    async function load(p){const r=await fetch('/api/accounts?page='+p+'&size='+SIZE).then(x=>x.json());
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join('');
+      document.getElementById('stat').textContent=`Page ${p} of ${r.totalPages} — ${r.total} accounts`;
+      const pg=document.getElementById('pages');pg.innerHTML='';for(let i=1;i<=r.totalPages;i++){const b=document.createElement('button');b.textContent=i;b.setAttribute('aria-label','Page '+i);if(i===p)b.className='active';b.onclick=()=>load(i);pg.appendChild(b);}}
+    load(1);
+  </script>
+</body>
+</html>

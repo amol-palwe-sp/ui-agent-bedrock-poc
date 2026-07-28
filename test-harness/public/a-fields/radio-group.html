@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Radio group — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.opt{display:flex;align-items:center;gap:8px;margin:8px 0}.opt input{width:auto}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Radio group</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Single choice <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Radio buttons — CLICK on the target option.</p>
+    <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;"><legend>Plan</legend>
+      <label class="opt"><input type="radio" name="plan" aria-label="Basic" /> Basic</label>
+      <label class="opt"><input type="radio" name="plan" aria-label="Premium" /> Premium</label>
+      <label class="opt"><input type="radio" name="plan" aria-label="Enterprise" /> Enterprise</label>
+    </fieldset>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Continue</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Continued.</div>
+  </div></main>
+</body>
+</html>

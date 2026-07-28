@@ -23,6 +23,14 @@ public record TokenUsage(
                 this.outputCostUsd + other.outputCostUsd);
     }
 
+    public TokenUsage subtract(TokenUsage other) {
+        return new TokenUsage(
+                this.inputTokens - other.inputTokens,
+                this.outputTokens - other.outputTokens,
+                this.inputCostUsd - other.inputCostUsd,
+                this.outputCostUsd - other.outputCostUsd);
+    }
+
     @Override
     public String toString() {
         return String.format(

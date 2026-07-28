@@ -4,6 +4,8 @@ package com.sailpoint.poc.uiagent.replay;
 public enum ReplayStrategy {
     FINGERPRINT,
     RETAG,
+    /** Remap the element by viewport-independent structural content hash (Skyvern-style). */
+    STRUCTURAL_HASH,
     /** Scroll element into viewport via CSS selector, retag full DOM (REQ-SIV-2). */
     SCROLL_INTO_VIEW,
     /** Chunk-scroll from top, retag full DOM after each chunk (REQ-SIV-3). */

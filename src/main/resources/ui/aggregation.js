@@ -10,7 +10,10 @@
   let eventSource        = null;
   let isGenerating       = false;
   let isRunning          = false;
-  let selectedMode       = 'LLM_DOM'; // 'LLM_DOM' | 'NETWORK'
+  let selectedMode       = 'LLM_DOM'; // 'LLM_DOM' | 'NETWORK'  (extraction strategy)
+  let part1Metrics       = null; // { frames, inputTokens, outputTokens, costUsd } from generate
+  let part2Metrics       = null; // stats object from the last completed run
+  let cachedScripts      = [];   // saved AGGREGATION scripts for REPLAY
 
   // ── Element refs ───────────────────────────────────────────────────────────
   const dropZone               = document.getElementById('dropZone');
@@ -42,6 +45,11 @@
   const btnContinueAnyway      = document.getElementById('btnContinueAnyway');
   const btnGoBack              = document.getElementById('btnGoBack');
   const btnRun                 = document.getElementById('btnRun');
+  const runModeSection         = document.getElementById('runModeSection');
+  const replayPanel            = document.getElementById('replayPanel');
+  const scriptSelect           = document.getElementById('scriptSelect');
+  const scriptMeta             = document.getElementById('scriptMeta');
+  const btnRefreshScripts      = document.getElementById('btnRefreshScripts');
   const confidencePanel        = document.getElementById('confidencePanel');
   const confidenceRingFill     = document.getElementById('confidenceRingFill');
   const confidenceScoreNum     = document.getElementById('confidenceScoreNum');
@@ -72,12 +80,20 @@
   const usageSummary           = document.getElementById('usageSummary');
   const resultsPlaceholder     = document.getElementById('resultsPlaceholder');
   const resultsTokenInfo       = document.getElementById('resultsTokenInfo');
+  const sectionMetrics         = document.getElementById('sectionMetrics');
+  const metricsSystem          = document.getElementById('metricsSystem');
+  const metricsRun             = document.getElementById('metricsRun');
+  const metricsHeaderToggle    = document.getElementById('metricsHeaderToggle');
+  const btnCopyMetrics         = document.getElementById('btnCopyMetrics');
+  const metricsTableHead       = document.getElementById('metricsTableHead');
+  const metricsTableBody       = document.getElementById('metricsTableBody');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
     initDropZone();
     initSSE();
     initModeSelector();
+    initRunMode();
     setStatus('ready');
 
     btnGenerate.addEventListener('click', handleGenerate);
@@ -98,6 +114,9 @@
     });
     btnGoBack.addEventListener('click', hideWarningBanner);
     btnDownloadCsv.addEventListener('click', handleDownload);
+    if (btnCopyMetrics) btnCopyMetrics.addEventListener('click', copyMetricsForConfluence);
+    if (metricsSystem) metricsSystem.addEventListener('input', renderMetricsTable);
+    if (metricsRun) metricsRun.addEventListener('input', renderMetricsTable);
   });
 
   // ── Drop Zone ──────────────────────────────────────────────────────────────
@@ -151,6 +170,112 @@
     if (netLabel)  netLabel.classList.toggle('mode-option-active',  selectedMode === 'NETWORK');
   }
 
+  // ── Run Mode (Run / Record / Replay) ────────────────────────────────────────
+  // Orthogonal to Aggregation Mode: this controls determinism (live vs recorded
+  // navigation), while Aggregation Mode controls the extraction strategy.
+  function initRunMode() {
+    if (!runModeSection) return;
+
+    runModeSection.querySelectorAll('input[name="runMode"]').forEach(function (radio) {
+      radio.addEventListener('change', updateRunModeUI);
+    });
+    if (scriptSelect) {
+      scriptSelect.addEventListener('change', function () {
+        renderScriptMeta();
+        updateRunButton();
+      });
+    }
+    if (btnRefreshScripts) {
+      btnRefreshScripts.addEventListener('click', function () { loadScripts(true); });
+    }
+    updateRunModeUI();
+  }
+
+  function getRunMode() {
+    const checked = document.querySelector('input[name="runMode"]:checked');
+    return checked ? checked.value : 'RUN';
+  }
+
+  function updateRunModeUI() {
+    const mode = getRunMode();
+    if (replayPanel) replayPanel.classList.toggle('hidden', mode !== 'REPLAY');
+    if (btnRun) {
+      btnRun.textContent = mode === 'RECORD' ? '▶ Record Aggregation'
+        : mode === 'REPLAY' ? '▶ Replay Aggregation' : '▶ Run Aggregation';
+    }
+    if (mode === 'REPLAY') loadScripts();
+    updateRunButton();
+  }
+
+  function updateRunButton() {
+    if (isRunning) { btnRun.disabled = true; return; }
+    if (getRunMode() === 'REPLAY') {
+      btnRun.disabled = !scriptSelect || !scriptSelect.value;
+      return;
+    }
+    btnRun.disabled = !goalBox.textContent.trim();
+  }
+
+  // Only AGGREGATION scripts are replayable here (provisioning scripts are filtered out).
+  function loadScripts(showToastOnEmpty) {
+    if (!scriptSelect) return Promise.resolve();
+    const prev = scriptSelect.value;
+    return fetch('/api/scripts')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showError(data.error); return; }
+        cachedScripts = (data.scripts || []).filter(function (s) {
+          return (s.taskType || '').toUpperCase() === 'AGGREGATION';
+        });
+        scriptSelect.innerHTML = '<option value="">— Select a script —</option>';
+        cachedScripts.forEach(function (s) {
+          const opt = document.createElement('option');
+          opt.value = s.path;
+          opt.textContent = (s.scriptName || s.name || 'script')
+            + ' (' + (s.steps != null ? s.steps : '?') + ' steps'
+            + (s.health != null ? ', health ' + s.health : '') + ')';
+          scriptSelect.appendChild(opt);
+        });
+        if (prev && cachedScripts.some(function (s) { return s.path === prev; })) {
+          scriptSelect.value = prev;
+        }
+        renderScriptMeta();
+        updateRunButton();
+        if (showToastOnEmpty && cachedScripts.length === 0 && scriptMeta) {
+          scriptMeta.textContent = 'No saved aggregation scripts in '
+            + (data.dir || './output/scripts') + '. Run Record mode first.';
+        }
+      })
+      .catch(function (err) { showError(err.message); });
+  }
+
+  function renderScriptMeta() {
+    if (!scriptMeta || !scriptSelect) return;
+    const path = scriptSelect.value;
+    if (!path) {
+      scriptMeta.textContent = 'Choose an aggregation script recorded earlier. Token values above apply to TYPE steps.';
+      return;
+    }
+    const s = cachedScripts.find(function (x) { return x.path === path; });
+    if (!s) { scriptMeta.textContent = path; return; }
+    if (s.parseError) { scriptMeta.textContent = 'Could not parse script: ' + s.parseError; return; }
+    const goalSnippet = (s.goal || '').length > 100 ? s.goal.substring(0, 100) + '…' : (s.goal || '');
+    scriptMeta.textContent = (s.steps || 0) + ' steps · health '
+      + (s.health != null ? s.health : '—')
+      + (s.startUrl ? ' · ' + s.startUrl : '')
+      + (goalSnippet ? ' · ' + goalSnippet : '');
+  }
+
+  // token → value map for TYPE steps; the LLM only ever sees the {Token}.
+  function buildTokenValues() {
+    const out = {};
+    placeholders.forEach(function (ph) {
+      const key = ph.token.replace(/^\{|\}$/g, '');
+      if (key) out[key] = ph.currentValue;
+    });
+    return out;
+  }
+
   // ── Generate ───────────────────────────────────────────────────────────────
   function handleGenerate() {
     if (isGenerating || !uploadedFile) return;
@@ -199,6 +324,15 @@
         showValidationBadge(data.isValid, data.issues || []);
         showTokenInfo(data.inputTokens, data.outputTokens, data.costUsd);
         showConfidencePanel(data);
+
+        // Capture Part 1 (video → script) metrics for the Run Metrics block
+        part1Metrics = {
+          frames:       data.frameCount   || 0,
+          inputTokens:  data.inputTokens  || 0,
+          outputTokens: data.outputTokens || 0,
+          costUsd:      data.costUsd      || 0
+        };
+
         unlockSection(sectionScript);
         setStatus('ready');
       })
@@ -338,15 +472,15 @@
     const active = substituted.filter(function (s) { return s.trim().length > 0; });
     if (active.length === 0) {
       goalBox.textContent = '';
-      btnRun.disabled = true;
       updateStepsSummary(0);
+      updateRunButton();
       return;
     }
 
     const goalString = active.join(', then ');
     goalBox.textContent = goalString;
-    btnRun.disabled = isRunning;
     updateStepsSummary(active.length);
+    updateRunButton();
   }
 
   function updateStepsSummary(count) {
@@ -449,16 +583,38 @@
   }
 
   function doRun() {
-    const goalString = goalBox.textContent.trim();
-    if (!goalString) return;
+    const mode = getRunMode();
 
-    // Override URL field takes precedence; fall back to Claude-extracted URL
-    const url = overrideUrl.value.trim() || generatedUrl;
+    // Secrets stay off the wire: send the *tokenized* goal + a separate token map.
+    // The pipeline substitutes real values only at Playwright type-time (Phase 3).
+    const payload = {
+      mode:              mode,
+      aggregationMode:   selectedMode,
+      paginationPattern: paginationPattern,
+      tokenValues:       buildTokenValues(),
+    };
 
-    if (!url) {
-      showError('No target URL available. Please enter the URL in the Override URL field.');
-      resetRunState();
-      return;
+    if (mode === 'REPLAY') {
+      payload.scriptPath = scriptSelect ? scriptSelect.value : '';
+      if (!payload.scriptPath) {
+        showError('Select a saved script to replay.');
+        return;
+      }
+      payload.url = overrideUrl.value.trim() || generatedUrl || '';
+    } else {
+      const active = generatedSteps.filter(function (s) { return s.trim().length > 0; });
+      const tokenizedGoal = active.join(', then ');
+      if (!tokenizedGoal) return;
+
+      // Override URL field takes precedence; fall back to Claude-extracted URL
+      const url = overrideUrl.value.trim() || generatedUrl;
+      if (!url) {
+        showError('No target URL available. Please enter the URL in the Override URL field.');
+        resetRunState();
+        return;
+      }
+      payload.goalLine = tokenizedGoal;
+      payload.url      = url;
     }
 
     isRunning = true;
@@ -474,12 +630,7 @@
     fetch('/api/aggregation/run', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        goalLine:          goalString,
-        url:               url,
-        paginationPattern: paginationPattern,
-        aggregationMode:   selectedMode,
-      }),
+      body: JSON.stringify(payload),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -534,9 +685,9 @@
 
   function resetRunState() {
     isRunning = false;
-    btnRun.disabled = false;
     btnStop.classList.add('hidden');
     setStatus('ready');
+    updateRunButton();
   }
 
   // ── SSE ────────────────────────────────────────────────────────────────────
@@ -594,6 +745,7 @@
     resetRunState();
     if (exitCode === 0) {
       appendLog('Aggregation completed successfully', 'success');
+      if (getRunMode() === 'RECORD') loadScripts();
     } else {
       appendLog('Aggregation finished with errors', 'error');
     }
@@ -694,6 +846,151 @@
               + '<span>Cost: <strong>$' + (stats.costUsd || 0).toFixed(6) + '</strong></span>';
       usageSummary.classList.remove('hidden');
     }
+
+    // Capture Part 2 metrics and render the copy-for-Confluence block
+    part2Metrics = stats;
+    renderMetricsTable();
+    unlockSection(sectionMetrics);
+  }
+
+  // ── Run Metrics (copy for Confluence) ──────────────────────────────────────
+
+  // Builds the ordered list of { label, value } cells for the current run.
+  // Part 1 values come from the last "Generate"; Part 2 from the last "Run".
+  function computeMetricsCells() {
+    const p1 = part1Metrics || {};
+    const p2 = part2Metrics || {};
+
+    const p1Cost   = num(p1.costUsd);
+    const p2Cost   = num(p2.costUsd);
+    const steps    = num(p2.agentSteps);
+    const perStep  = typeof p2.perStepCostUsd === 'number'
+            ? p2.perStepCostUsd
+            : (steps > 0 ? p2Cost / steps : 0);
+    const totalCost = p1Cost + p2Cost;
+
+    return [
+      { label: 'System',        value: (metricsSystem.value || '').trim() },
+      { label: 'Run',           value: (metricsRun.value || '').trim() },
+      { label: 'P1 Frames',     value: String(num(p1.frames)) },
+      { label: 'P1 Input',      value: String(num(p1.inputTokens)) },
+      { label: 'P1 Output',     value: String(num(p1.outputTokens)) },
+      { label: 'P1 Cost ($)',   value: p1Cost.toFixed(4) },
+      { label: 'P2 Steps',      value: String(steps) },
+      { label: 'P2 Input',      value: String(num(p2.inputTokens)) },
+      { label: 'P2 Output',     value: String(num(p2.outputTokens)) },
+      { label: 'P2 Cost ($)',   value: p2Cost.toFixed(4) },
+      { label: 'Cost/Step ($)', value: perStep.toFixed(6) },
+      { label: 'Accounts',      value: String(num(p2.totalRows)) },
+      { label: 'Pages',         value: String(num(p2.pagesScraped)) },
+      { label: 'Strategy',      value: p2.strategyUsed || 'LLM_DOM' },
+      { label: 'Total Cost ($)', value: totalCost.toFixed(4) }
+    ];
+  }
+
+  function renderMetricsTable() {
+    if (!metricsTableHead || !metricsTableBody) return;
+    const cells = computeMetricsCells();
+
+    const headRow = document.createElement('tr');
+    cells.forEach(function (c) {
+      const th = document.createElement('th');
+      th.textContent = c.label;
+      headRow.appendChild(th);
+    });
+    metricsTableHead.innerHTML = '';
+    metricsTableHead.appendChild(headRow);
+
+    const bodyRow = document.createElement('tr');
+    cells.forEach(function (c) {
+      const td = document.createElement('td');
+      td.textContent = c.value;
+      bodyRow.appendChild(td);
+    });
+    metricsTableBody.innerHTML = '';
+    metricsTableBody.appendChild(bodyRow);
+  }
+
+  function copyMetricsForConfluence() {
+    if (!part2Metrics) {
+      showError('Run an aggregation first — no metrics to copy yet.');
+      return;
+    }
+    const cells = computeMetricsCells();
+    const includeHeader = metricsHeaderToggle ? metricsHeaderToggle.checked : true;
+
+    const headers = cells.map(function (c) { return c.label; });
+    const values  = cells.map(function (c) { return c.value; });
+
+    // Plain-text TSV (spreadsheets + Confluence both accept it)
+    const tsvLines = [];
+    if (includeHeader) tsvLines.push(headers.join('\t'));
+    tsvLines.push(values.join('\t'));
+    const tsv = tsvLines.join('\n');
+
+    // HTML table — Confluence turns this into a native table on paste
+    let html = '<table><tbody>';
+    if (includeHeader) {
+      html += '<tr>' + headers.map(function (h) {
+        return '<th>' + escapeHtml(h) + '</th>';
+      }).join('') + '</tr>';
+    }
+    html += '<tr>' + values.map(function (v) {
+      return '<td>' + escapeHtml(v) + '</td>';
+    }).join('') + '</tr>';
+    html += '</tbody></table>';
+
+    writeClipboard(html, tsv)
+      .then(function () { showToast('Copied — paste into Confluence'); })
+      .catch(function () { showError('Copy failed — select the table manually.'); });
+  }
+
+  function writeClipboard(html, text) {
+    if (navigator.clipboard && window.ClipboardItem) {
+      try {
+        const item = new ClipboardItem({
+          'text/html':  new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([text], { type: 'text/plain' })
+        });
+        return navigator.clipboard.write([item]);
+      } catch (e) { /* fall through */ }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function (resolve, reject) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        resolve();
+      } catch (e) { reject(e); }
+    });
+  }
+
+  function num(v) {
+    const n = Number(v);
+    return isNaN(n) ? 0 : n;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+  }
+
+  function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    toastContainer.appendChild(toast);
+    setTimeout(function () { toast.remove(); }, 3000);
   }
 
   function renderPreviewTable(headers, rows) {

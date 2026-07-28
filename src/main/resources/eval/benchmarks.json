@@ -232,6 +232,194 @@
           { "name": "Password", "label": "Enter your password field", "type": "password" }
         ]
       }
+    },
+    {
+      "id": "eval_009",
+      "description": "BambooHR - Create new employee provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/BambooHR_CreateUser.mp4",
+      "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click Log In button, then click No Thanks button, then click People link, then click New Employee button, then click Add Anyway button, then enter \"{FirstName}\" in the First Name* field, then enter \"{LastName}\" in the Last Name* field, then select \"{Department}\" from the Department* dropdown, then select \"{Division}\" from the Division* dropdown, then click Save button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "enter \"{Password}\" in the Password field",
+          "click Log In button",
+          "click No Thanks button",
+          "click People link",
+          "click New Employee button",
+          "click Add Anyway button",
+          "enter \"{FirstName}\" in the First Name* field",
+          "enter \"{LastName}\" in the Last Name* field",
+          "select \"{Department}\" from the Department* dropdown",
+          "select \"{Division}\" from the Division* dropdown",
+          "click Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",      "label": "Email Address field", "type": "email"    },
+          { "name": "Password",   "label": "Password field",      "type": "password" },
+          { "name": "FirstName",  "label": "First Name* field",   "type": "text"     },
+          { "name": "LastName",   "label": "Last Name* field",    "type": "text"     },
+          { "name": "Department", "label": "Department* dropdown", "type": "text"    },
+          { "name": "Division",   "label": "Division* dropdown",   "type": "text"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_010",
+      "description": "Webex Control Hub - Add new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Webex_CreateUser.mp4",
+      "targetUrl": "https://admin.webex.com/overview",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign in button, then click Users link, then click Add users button, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{UserEmail}\" in the Email address field, then click Next button, then click Next button, then click Add users button, then click Close button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "click Sign In button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign in button",
+          "click Users link",
+          "click Add users button",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{UserEmail}\" in the Email address field",
+          "click Next button",
+          "click Next button",
+          "click Add users button",
+          "click Close button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",     "label": "Email Address field",  "type": "email"    },
+          { "name": "Password",  "label": "Password field",       "type": "password" },
+          { "name": "FirstName", "label": "First name field",     "type": "text"     },
+          { "name": "LastName",  "label": "Last name field",      "type": "text"     },
+          { "name": "UserEmail", "label": "Email address field",  "type": "email"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_011",
+      "description": "SecureLink (Imprivata) - Create new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Imprivata_CreateUser.mp4",
+      "targetUrl": "https://sailpoint.securelinkcloud.net/ui/login",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{UserId}\" in the User ID field, then click Next button, then enter \"{Password}\" in the Password field, then click Next button, then click USER MANAGEMENT, then click Add New User button, then enter \"{NewUserId}\" in the User ID field, then click Name field, then enter \"{Name}\" in the Name field, then click Email field, then enter \"{Email}\" in the Email field, then click Domain Name dropdown, then click imprivata.com option, then check the \"User Group\" checkbox to select all user groups, then check the \"HelpDesk Administrator\" checkbox, then click Create User button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{UserId}\" in the User ID field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Next button",
+          "click USER MANAGEMENT",
+          "click Add New User button",
+          "enter \"{NewUserId}\" in the User ID field",
+          "click Name field",
+          "enter \"{Name}\" in the Name field",
+          "click Email field",
+          "enter \"{Email}\" in the Email field",
+          "click Domain Name dropdown",
+          "click imprivata.com option",
+          "check the \"User Group\" checkbox to select all user groups",
+          "check the \"HelpDesk Administrator\" checkbox",
+          "click Create User button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "UserId",    "label": "User ID field (login)", "type": "username" },
+          { "name": "Password",  "label": "Password field",        "type": "password" },
+          { "name": "NewUserId", "label": "User ID field",         "type": "text"     },
+          { "name": "Name",      "label": "Name field",            "type": "text"     },
+          { "name": "Email",     "label": "Email field",           "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_012",
+      "description": "BambooHR - Login and navigate to People list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/BambooHR_AggUsers.mp4",
+      "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click the Log In button, then click the Yes, Trust this Browser button, then click People in the left navigation menu this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "enter \"{Password}\" in the Password field",
+          "click the Log In button",
+          "click the Yes, Trust this Browser button",
+          "click People in the left navigation menu"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The People directory lists employees in a table. Navigate through result pages using the pagination controls at the bottom of the directory (page numbers with Previous/Next controls).",
+          "selectorHint": "a[rel='next'], .pagination a.next, button[aria-label='Next']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",      "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_013",
+      "description": "Webex Control Hub - Login and navigate to Users list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Webex_AggUsers.mp4",
+      "targetUrl": "https://admin.webex.com/overview",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to https://admin.webex.com/overview in the address bar, then enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Users in the left navigation menu this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to https://admin.webex.com/overview in the address bar",
+          "enter \"{Email}\" in the Email Address field",
+          "click Sign In button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign In button",
+          "click Users in the left navigation menu"
+        ],
+        "paginationPattern": {
+          "type": "infinite_scroll",
+          "description": "The Users list in Webex Control Hub shows users in a paged table. Use the next/previous page controls at the bottom of the list to navigate between pages of users.",
+          "selectorHint": "button[aria-label='Next page'], button[aria-label='Go to next page'], .pagination a[rel='next']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",      "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_014",
+      "description": "SecureLink (Imprivata) - Login and navigate to User Management for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Imprivata_AggUsers.mp4",
+      "targetUrl": "http://sailpoint.securelinkcloud.net/ui/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to \"http://sailpoint.securelinkcloud.net/ui/user/list\" in the address bar, then enter \"{UserId}\" in the User ID field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Next button, then click the USER MANAGEMENT icon in the left sidebar this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to \"http://sailpoint.securelinkcloud.net/ui/user/list\" in the address bar",
+          "enter \"{UserId}\" in the User ID field",
+          "click the Next button",
+          "enter \"{Password}\" in the Password field",
+          "click the Next button",
+          "click the USER MANAGEMENT icon in the left sidebar"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The User Management list displays users in a table. Navigate through pages of results using the pagination controls (page size selector and next/previous page buttons) at the bottom of the table.",
+          "selectorHint": "button[aria-label='Next page'], .pagination a[rel='next'], a.next"
+        },
+        "tokens": [
+          { "name": "UserId",   "label": "User ID field (login)", "type": "username" },
+          { "name": "Password", "label": "Password field",        "type": "password" }
+        ]
+      }
     }
   ]
 }

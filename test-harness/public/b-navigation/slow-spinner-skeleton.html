@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slow load — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.spinner{width:26px;height:26px;border:3px solid #dbe4f5;border-top-color:var(--brand);border-radius:50%;animation:spin 1s linear infinite;display:inline-block}
+  @keyframes spin{to{transform:rotate(360deg)}}.skeleton{height:16px;background:linear-gradient(90deg,#eef2f8,#f7f9fc,#eef2f8);border-radius:6px;margin:8px 0;animation:sh 1.2s infinite}
+  @keyframes sh{0%{opacity:.6}50%{opacity:1}100%{opacity:.6}}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Slow load + skeleton</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Deferred content <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Content appears after a spinner + skeleton — exercises the settle/mutation wait before acting.</p>
+    <button id="load" onclick="load()">Load profile</button>
+    <div id="area" style="margin-top:16px;"></div>
+  </div></main>
+  <script>
+    function load(){const a=document.getElementById('area');a.innerHTML='<div class="spinner"></div><div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:80%"></div>';
+      setTimeout(()=>{a.innerHTML='<label for="nm">Name</label><input id="nm" aria-label="Name"/><div style="margin-top:14px"><button onclick="document.getElementById(\'ok\').style.display=\'block\'">Save</button></div><div id="ok" class="done-banner" style="display:none;margin-top:12px">Saved.</div>';},2200);}
+  </script>
+</body>
+</html>

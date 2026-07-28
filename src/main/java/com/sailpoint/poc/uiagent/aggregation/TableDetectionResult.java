@@ -11,10 +11,16 @@ import java.util.List;
  *   <li>{@code detectedByJs} — {@code true} if JS detected the table;
  *       {@code false} if Claude vision was used as fallback.</li>
  *   <li>{@code rawClaudeResponse} — raw text returned by Claude (null when JS succeeded).</li>
+ *   <li>{@code columnIndexMap} — ordered list parallel to {@code headers}: element {@code i} is
+ *       the physical {@code <td>} index in each data row that holds data for {@code headers.get(i)}.
+ *       {@code -1} means the header could not be matched to a physical column (cell will be empty).
+ *       Empty list when physical header texts were unavailable (Claude-only fallback or ARIA grid):
+ *       the scraper then falls back to positional alignment with structural-cell filtering.</li>
  * </ul>
  */
 public record TableDetectionResult(
         String selector,
         List<String> headers,
         boolean detectedByJs,
-        String rawClaudeResponse) {}
+        String rawClaudeResponse,
+        List<Integer> columnIndexMap) {}

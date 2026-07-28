@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Slider — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Range slider</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> no drag/range action. Setting a precise slider value needs drag or arrow-key nudging — not modelled.</div>
+    <h2>Budget slider <span class="pill gap">Roadmap gap</span></h2>
+    <label for="b">Budget: <span id="v">500</span></label>
+    <input type="range" id="b" aria-label="Budget" min="0" max="1000" step="10" value="500" style="width:100%" oninput="document.getElementById('v').textContent=this.value" />
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+</body>
+</html>

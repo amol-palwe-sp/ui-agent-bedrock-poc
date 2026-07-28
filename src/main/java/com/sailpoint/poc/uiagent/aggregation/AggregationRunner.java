@@ -6,6 +6,7 @@ import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
 import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
+import com.sailpoint.poc.uiagent.pipeline.PipelineMode;
 import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
 import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisPrompt;
@@ -14,6 +15,7 @@ import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 
 import java.io.File;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -71,14 +73,18 @@ public final class AggregationRunner {
         }
 
         PocConfig config  = new PocConfig();
-        int    maxPages   = config.aggregationMaxPages();
-        String outputDir  = config.aggregationOutputDir();
 
         TokenUsage videoUsage = TokenUsage.ZERO;
         AggregationVideoAnalysis videoAnalysis;
+        PipelineMode pipelineMode = parsed.pipelineMode();
 
-        // ── Phase 1 — Video Analysis OR load plan ───────────────────────────
-        if (parsed.plan() != null) {
+        // ── Phase 1 — Video Analysis OR load plan (skipped for pure REPLAY) ──
+        if (pipelineMode == PipelineMode.REPLAY && parsed.plan() == null && parsed.video() == null) {
+            // Pure replay: navigation is replayed from the recorded script. Pagination pattern is
+            // left "unknown" (AccountAggregator falls back to Claude for the first next-page click).
+            printSeparator("Phase 1 — Skipped (REPLAY: navigation replayed from script)");
+            videoAnalysis = new AggregationVideoAnalysis("", new PaginationPattern("unknown", "", ""));
+        } else if (parsed.plan() != null) {
             // Two-step path: load pre-computed plan, skip video analysis entirely
             printSeparator("Phase 1 — Loading Plan (skipping video analysis)");
             System.out.println("Loading plan from: " + parsed.plan());
@@ -162,9 +168,14 @@ public final class AggregationRunner {
         printSeparator("Phase 2 — Navigation / Phase 3 — Table Detection / Phase 4-5 — Aggregation + CSV");
 
         PipelineConfig pipelineConfig = PipelineConfig.builder()
+                .mode(pipelineMode)
                 .taskType(PipelineConfig.TaskType.AGGREGATION)
-                .startUrl(parsed.url())
+                .startUrl(parsed.url() != null ? parsed.url() : "")
                 .goal(effectiveGoal)
+                .scriptPath(parsed.scriptPath())
+                .scriptName(parsed.scriptName())
+                .tokenValues(parsed.tokens())
+                .saveScriptTo(config.scriptOutputDir())
                 .paginationPattern(videoAnalysis.paginationPattern())
                 .bedrockConfig(config.bedrock())
                 .browserConfig(config.browser())
@@ -251,8 +262,24 @@ public final class AggregationRunner {
                 Arguments:
                   --plan=<path>   Plan JSON from Step 1 (skips video analysis)
                   --video=<path>  MP4 video (required when --plan is not provided)
-                  --url=<url>     Target URL (always required)
+                  --url=<url>     Target URL (required unless --mode=REPLAY)
                   --goal=<text>   Navigation goal with real credentials (highly recommended)
+
+                Determinism / secrets (Phase 1-3):
+                  --mode=GENERATE|RECORD|REPLAY  Default GENERATE (live). RECORD saves a script;
+                                                 REPLAY re-runs a saved script deterministically.
+                  --script=<path>       Saved script JSON (required for --mode=REPLAY)
+                  --script-name=<name>  Optional name when recording
+                  --token=Name:value    Secret placeholder value (repeatable). The LLM only ever
+                                        sees {Name}; the real value is typed at execution time.
+
+                Examples (record then replay):
+                  ./gradlew runAggregation --args='--mode=RECORD --plan=./output/plan.json \\
+                    --url=https://app.example.com/users \\
+                    --goal=enter "{Email}" in Email, then click Next, then enter "{Password}" ... \\
+                    --token=Email:user@corp.com --token=Password:s3cr3t --script-name=corp-users'
+                  ./gradlew runAggregation --args='--mode=REPLAY --script=./output/scripts/corp-users.json \\
+                    --plan=./output/plan.json --token=Email:user@corp.com --token=Password:s3cr3t'
 
                 Configuration: src/main/resources/application.properties
                   aggregation.max.pages=5
@@ -262,13 +289,25 @@ public final class AggregationRunner {
 
     // ── Argument parsing ──────────────────────────────────────────────────────
 
-    private record ParsedArgs(String video, String plan, String url, String goal) {
+    private record ParsedArgs(String video, String plan, String url, String goal,
+                              String mode, String scriptPath, String scriptName,
+                              Map<String, String> tokens) {
+
+        PipelineMode pipelineMode() {
+            if ("REPLAY".equalsIgnoreCase(mode)) return PipelineMode.REPLAY;
+            if ("RECORD".equalsIgnoreCase(mode)) return PipelineMode.RECORD;
+            return PipelineMode.GENERATE;
+        }
 
         static ParsedArgs parse(String[] args) {
             String video = null;
             String plan  = null;
             String url   = null;
             String goal  = null;
+            String mode  = "GENERATE";
+            String scriptPath = "";
+            String scriptName = "";
+            Map<String, String> tokens = new HashMap<>();
 
             for (int i = 0; i < args.length; i++) {
                 String a = args[i];
@@ -278,6 +317,18 @@ public final class AggregationRunner {
                     plan = a.substring("--plan=".length()).trim();
                 } else if (a.startsWith("--url=")) {
                     url = a.substring("--url=".length()).trim();
+                } else if (a.startsWith("--mode=")) {
+                    mode = a.substring("--mode=".length()).trim().toUpperCase();
+                } else if (a.startsWith("--script=")) {
+                    scriptPath = a.substring("--script=".length()).trim();
+                } else if (a.startsWith("--script-name=")) {
+                    scriptName = a.substring("--script-name=".length()).trim();
+                } else if (a.startsWith("--token=")) {
+                    String pair = a.substring("--token=".length());
+                    int colon = pair.indexOf(':');
+                    if (colon > 0) {
+                        tokens.put(pair.substring(0, colon).trim(), pair.substring(colon + 1).trim());
+                    }
                 } else if (a.startsWith("--goal=")) {
                     StringBuilder g = new StringBuilder(a.substring("--goal=".length()).trim());
                     i = appendMergedWords(args, i, g);
@@ -289,19 +340,28 @@ public final class AggregationRunner {
                 }
             }
 
-            if (url == null || url.isBlank()) {
-                System.err.println("ERROR: --url is required.");
-                return null;
+            boolean isReplay = "REPLAY".equalsIgnoreCase(mode);
+
+            if (isReplay) {
+                if (scriptPath.isBlank()) {
+                    System.err.println("ERROR: --script=<path> is required for --mode=REPLAY.");
+                    return null;
+                }
+            } else {
+                if (url == null || url.isBlank()) {
+                    System.err.println("ERROR: --url is required.");
+                    return null;
+                }
+                if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                    System.err.println("ERROR: --url must start with http:// or https://");
+                    return null;
+                }
+                if (plan == null && (video == null || video.isBlank())) {
+                    System.err.println("ERROR: Either --plan or --video is required.");
+                    return null;
+                }
             }
-            if (!url.startsWith("http://") && !url.startsWith("https://")) {
-                System.err.println("ERROR: --url must start with http:// or https://");
-                return null;
-            }
-            if (plan == null && (video == null || video.isBlank())) {
-                System.err.println("ERROR: Either --plan or --video is required.");
-                return null;
-            }
-            return new ParsedArgs(video, plan, url, goal);
+            return new ParsedArgs(video, plan, url, goal, mode, scriptPath, scriptName, tokens);
         }
 
         private static int appendMergedWords(String[] args, int goalIdx, StringBuilder out) {

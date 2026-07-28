@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Star rating — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.stars{display:flex;gap:6px;font-size:32px;cursor:pointer}.star{color:#cbd5e1}.star.on{color:#f5b301}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Star rating</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Clickable icon rating <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Five star buttons — CLICK the Nth star.</p>
+    <div class="stars" role="radiogroup" aria-label="Rating" id="stars"></div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Submit</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;"></div>
+  </div></main>
+  <script>
+    const box=document.getElementById('stars');let val=0;
+    for(let i=1;i<=5;i++){const s=document.createElement('span');s.className='star';s.textContent='★';s.setAttribute('role','radio');s.setAttribute('aria-label',i+' star'+(i>1?'s':''));s.onclick=()=>{val=i;[...box.children].forEach((c,j)=>c.classList.toggle('on',j<i));};box.appendChild(s);}
+    document.querySelector('button').onclick=()=>{const o=document.getElementById('ok');o.textContent='Rated '+val+' stars.';o.style.display='block';};
+  </script>
+</body>
+</html>

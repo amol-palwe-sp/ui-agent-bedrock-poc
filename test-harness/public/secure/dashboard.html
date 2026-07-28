@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard — Demo Harness</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Demo Harness — Secure Area</h1>
+    <form method="POST" action="/logout" style="margin:0"><button class="secondary" style="padding:6px 12px">Sign out</button></form>
+  </header>
+  <main>
+    <div class="card">
+      <div class="done-banner">Authenticated. This page is only reachable after a successful login — use it to prove auth-gated navigation.</div>
+      <h2 style="margin-top:16px;">Admin dashboard</h2>
+      <p class="subtitle">Post-login landing page.</p>
+      <p><a class="btn" href="/secure/create-user.html" aria-label="Add new user">Add new user</a></p>
+      <p style="margin-top:10px;"><a href="/d-aggregation/table-numbered.html">Go to Users list (aggregation)</a></p>
+    </div>
+  </main>
+</body>
+</html>

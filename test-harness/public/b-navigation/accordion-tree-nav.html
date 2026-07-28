@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Accordion tree — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.acc>button{display:block;width:100%;text-align:left;background:#f0f3fa;color:var(--ink);margin:6px 0;border-radius:8px}
+  .sub{padding-left:16px;display:none}.sub.open{display:block}.sub a{display:block;padding:8px;color:var(--brand);text-decoration:none;cursor:pointer}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Accordion / tree nav</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Expandable menu <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Expand a section, then click a nested item.</p>
+    <div class="acc">
+      <button aria-expanded="false" onclick="tog(this,'g1')">Administration</button>
+      <div class="sub" id="g1"><a onclick="pick('Users')">Users</a><a onclick="pick('Roles')">Roles</a></div>
+      <button aria-expanded="false" onclick="tog(this,'g2')">Reports</button>
+      <div class="sub" id="g2"><a onclick="pick('Usage')">Usage</a></div>
+    </div>
+    <div id="panel" style="margin-top:16px;"></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Added.</div>
+  </div></main>
+  <script>
+    function tog(btn,id){const s=document.getElementById(id);s.classList.toggle('open');btn.setAttribute('aria-expanded',s.classList.contains('open'));}
+    function pick(v){document.getElementById('panel').innerHTML='<p>'+v+' section</p><button onclick="document.getElementById(\'ok\').style.display=\'block\'">Add</button>';}
+  </script>
+</body>
+</html>

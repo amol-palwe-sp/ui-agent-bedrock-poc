@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hover mega-menu — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .menubar{display:flex;gap:20px}
+    .menuitem{position:relative;font-weight:600;cursor:default;padding:8px 0}
+    .mega{position:absolute;top:100%;left:0;background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;min-width:200px;box-shadow:var(--shadow);display:none;z-index:5}
+    /* Opens ONLY on hover — there is no click target to open it. */
+    .menuitem:hover .mega{display:block}
+    .mega a{display:block;padding:8px;color:var(--brand);text-decoration:none;cursor:pointer}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Hover mega-menu</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> the menu opens purely on CSS <code>:hover</code>. There is no hover action, so the sub-items are not reachable by clicking alone.</div>
+    <h2>Hover-only menu <span class="pill gap">Roadmap gap</span></h2>
+    <div class="menubar">
+      <div class="menuitem">Products
+        <div class="mega"><a onclick="pick('Analytics')">Analytics</a><a onclick="pick('Automation')">Automation</a></div>
+      </div>
+      <div class="menuitem">Solutions
+        <div class="mega"><a onclick="pick('Enterprise')">Enterprise</a></div>
+      </div>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+  </div></main>
+  <script>function pick(v){const o=document.getElementById('ok');o.textContent='Opened: '+v;o.style.display='block';}</script>
+</body>
+</html>

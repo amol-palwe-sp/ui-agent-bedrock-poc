@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Date picker — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.cal{display:none;margin-top:8px;border:1px solid var(--line);border-radius:8px;padding:10px;max-width:280px}
+  .cal.open{display:block}.grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.grid span{padding:6px;text-align:center;border-radius:6px;cursor:pointer}.grid span:hover{background:#eef2fb}
+  .grid .hd{font-size:11px;color:var(--muted);cursor:default}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Date picker</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> no date action. The agent must open the calendar popup and click the correct day cell — vision-only navigation with no semantic date target.</div>
+    <h2>Calendar popup <span class="pill gap">Roadmap gap</span></h2>
+    <label>Start date</label>
+    <input type="text" readonly aria-label="Start date" id="out" placeholder="Pick a date" onclick="cal.classList.toggle('open')" />
+    <div class="cal" id="cal"><strong>August 2026</strong><div class="grid" id="grid"></div></div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    const grid=document.getElementById('grid');const cal=document.getElementById('cal');
+    ['Su','Mo','Tu','We','Th','Fr','Sa'].forEach(d=>{const s=document.createElement('span');s.className='hd';s.textContent=d;grid.appendChild(s);});
+    for(let i=0;i<5;i++)grid.appendChild(document.createElement('span'));
+    for(let d=1;d<=31;d++){const s=document.createElement('span');s.textContent=d;s.setAttribute('role','button');s.setAttribute('aria-label','August '+d+', 2026');s.onclick=()=>{document.getElementById('out').value='2026-08-'+String(d).padStart(2,'0');cal.classList.remove('open');};grid.appendChild(s);}
+  </script>
+</body>
+</html>

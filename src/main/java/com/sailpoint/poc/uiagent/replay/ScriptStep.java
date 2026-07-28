@@ -30,7 +30,8 @@ public record ScriptStep(
         boolean expectedUrlExact,
         ReplayStrategy lastReplayStrategy,
         boolean lastReplaySuccess,
-        int missCount) {
+        int missCount,
+        String structuralHash) {
 
     public static ScriptStep fromJson(JSONObject o) {
         List<String> fallbacks = new ArrayList<>();
@@ -69,7 +70,8 @@ public record ScriptStep(
                 o.optBoolean("expectedUrlExact", false),
                 strategy,
                 o.optBoolean("lastReplaySuccess", false),
-                o.optInt("missCount", 0));
+                o.optInt("missCount", 0),
+                o.optString("structuralHash", ""));
     }
 
     public JSONObject toJson() {
@@ -95,6 +97,7 @@ public record ScriptStep(
         if (lastReplayStrategy != null) o.put("lastReplayStrategy", lastReplayStrategy.name());
         o.put("lastReplaySuccess", lastReplaySuccess);
         o.put("missCount", missCount);
+        if (structuralHash != null && !structuralHash.isBlank()) o.put("structuralHash", structuralHash);
         return o;
     }
 
@@ -108,7 +111,8 @@ public record ScriptStep(
                 stepIndex, action, newStableId, stableIdOrdinal,
                 newFingerprint, newLevel, elementLabel, newFallbacks,
                 text, key, label, checked, url, direction, amount, ms,
-                expectedUrlPattern, expectedUrlExact, strategy, true, missCount + 1);
+                expectedUrlPattern, expectedUrlExact, strategy, true, missCount + 1,
+                structuralHash);
     }
 
     public ScriptStep withReplayMeta(ReplayStrategy strategy, boolean success) {
@@ -116,6 +120,7 @@ public record ScriptStep(
                 stepIndex, action, stableId, stableIdOrdinal,
                 fingerprintString, fingerprintLevel, elementLabel, fallbackSelectors,
                 text, key, label, checked, url, direction, amount, ms,
-                expectedUrlPattern, expectedUrlExact, strategy, success, missCount);
+                expectedUrlPattern, expectedUrlExact, strategy, success, missCount,
+                structuralHash);
     }
 }

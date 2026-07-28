@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tabbed nav — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.tabs{display:flex;gap:6px;border-bottom:2px solid var(--line)}.tab{padding:10px 16px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;font-weight:600}
+  .tab[aria-selected=true]{border-bottom-color:var(--brand);color:var(--brand)}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Tabbed navigation</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>role=tab panels <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Switch tabs, then act inside the revealed panel.</p>
+    <div class="tabs" role="tablist">
+      <div class="tab" role="tab" aria-selected="true" onclick="sel(this,'p1')">Profile</div>
+      <div class="tab" role="tab" aria-selected="false" onclick="sel(this,'p2')">Billing</div>
+      <div class="tab" role="tab" aria-selected="false" onclick="sel(this,'p3')">Security</div>
+    </div>
+    <div id="p1" class="panel" style="margin-top:16px;"><p>Profile details.</p></div>
+    <div id="p2" class="panel" style="margin-top:16px;display:none;">
+      <label for="card">Card</label><input id="card" aria-label="Card"/>
+      <div style="margin-top:14px"><button onclick="ok.style.display='block'">Save</button></div>
+    </div>
+    <div id="p3" class="panel" style="margin-top:16px;display:none;"><p>Security settings.</p></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    function sel(tab,pid){document.querySelectorAll('.tab').forEach(t=>t.setAttribute('aria-selected','false'));tab.setAttribute('aria-selected','true');
+      document.querySelectorAll('.panel').forEach(p=>p.style.display='none');document.getElementById(pid).style.display='block';}
+  </script>
+</body>
+</html>

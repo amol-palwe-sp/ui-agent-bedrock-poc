@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SPA router — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>nav a{margin-right:14px;cursor:pointer;color:var(--brand);text-decoration:none;font-weight:600}nav a.active{text-decoration:underline}</style>
+</head>
+<body>
+  <header class="appbar"><h1>SPA router</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Client-side routing <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Views swap via <code>history.pushState</code> — the path changes but there is no full reload.</p>
+    <nav><a onclick="go('home')">Home</a><a onclick="go('products')">Products</a><a onclick="go('settings')">Settings</a></nav>
+    <div id="view" style="margin-top:18px;"></div>
+  </div></main>
+  <script>
+    function go(v){history.pushState({},'', '/b-navigation/spa-router.html#/'+v);render(v);}
+    function render(v){const el=document.getElementById('view');
+      if(v==='settings'){el.innerHTML='<label>Preference</label><input aria-label="Preference"/><div style="margin-top:14px"><button onclick="document.getElementById(\'v\').textContent=\'Preferences saved.\'">Save preferences</button></div><div id="v" class="done-banner" style="margin-top:12px"></div>';}
+      else if(v==='products'){el.innerHTML='<p>Product catalog view.</p>';}
+      else{el.innerHTML='<p>Welcome home.</p>';}}
+    window.addEventListener('popstate',()=>render((location.hash.split('/')[1])||'home'));
+    render('home');
+  </script>
+</body>
+</html>

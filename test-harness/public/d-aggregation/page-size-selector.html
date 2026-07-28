@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Page-size selector — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.pages{display:flex;gap:4px;flex-wrap:wrap}.pages button.active{background:#0d47c9}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Page-size selector</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <div class="gap-note"><strong>Ladder:</strong> a "rows per page" select changes page count. The agent should pick a large size to reduce pages, then paginate.</div>
+    <h2>Rows per page <span class="pill warn">Ladder</span></h2>
+    <div class="toolbar">
+      <label for="size" style="margin:0">Rows per page</label>
+      <select id="size" aria-label="Rows per page" style="width:auto" onchange="page=1;load()">
+        <option>10</option><option selected>25</option><option>50</option><option>100</option>
+      </select>
+    </div>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="toolbar"><div class="pages" id="pages"></div><span class="status" id="stat"></span></div>
+  </div></main>
+  <script>
+    let page=1;
+    async function load(){const size=parseInt(document.getElementById('size').value);
+      const r=await fetch('/api/accounts?page='+page+'&size='+size).then(x=>x.json());
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join('');
+      document.getElementById('stat').textContent=`Page ${page} of ${r.totalPages} — ${r.total} accounts`;
+      const pg=document.getElementById('pages');pg.innerHTML='';for(let i=1;i<=r.totalPages;i++){const b=document.createElement('button');b.textContent=i;b.setAttribute('aria-label','Page '+i);if(i===page)b.className='active';b.onclick=()=>{page=i;load();};pg.appendChild(b);}}
+    load();
+  </script>
+</body>
+</html>

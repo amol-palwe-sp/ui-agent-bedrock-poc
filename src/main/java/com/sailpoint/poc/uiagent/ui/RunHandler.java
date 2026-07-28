@@ -119,6 +119,14 @@ public final class RunHandler implements HttpHandler {
                 // AgentPipeline owns all resource lifecycle (REQ-3.4)
                 PipelineResult result = AgentPipeline.run(pipelineConfig, listener);
 
+                // Final structured metrics for the Run Metrics (copy-for-Confluence) block.
+                TokenUsage usage = result.totalUsage();
+                state.logQueue.offer("RUN_STATS:" + result.agentSteps()
+                        + ":" + usage.inputTokens()
+                        + ":" + usage.outputTokens()
+                        + ":" + usage.totalCostUsd()
+                        + ":" + result.exitReason());
+
                 state.logQueue.offer("STATUS:ready");
                 state.logQueue.offer("DONE:" + (result.success() ? "0" : "1"));
 

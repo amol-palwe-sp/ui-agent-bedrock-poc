@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-select chips — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.field{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-wrap:wrap;gap:6px;min-height:44px;cursor:text}
+  .chip{background:#eef2fb;border-radius:999px;padding:3px 10px;font-size:13px;display:flex;gap:6px;align-items:center}.chip b{cursor:pointer}
+  .menu{list-style:none;margin:6px 0 0;padding:4px;border:1px solid var(--line);border-radius:8px}.menu li{padding:8px 10px;border-radius:6px;cursor:pointer}.menu li:hover{background:#eef2fb}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Multi-select chips</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> no dedicated multi-select action. The agent must emulate it with repeated CLICKs and correctly track which options are already chosen.</div>
+    <h2>Tag multi-select <span class="pill gap">Roadmap gap</span></h2>
+    <label>Groups</label>
+    <div class="field" id="chips"></div>
+    <ul class="menu" aria-label="Groups options">
+      <li role="option" onclick="pick('Engineering')">Engineering</li>
+      <li role="option" onclick="pick('Finance')">Finance</li>
+      <li role="option" onclick="pick('Marketing')">Marketing</li>
+      <li role="option" onclick="pick('Support')">Support</li>
+    </ul>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    const chips=document.getElementById('chips');const chosen=new Set();
+    function render(){chips.innerHTML='';chosen.forEach(v=>{const c=document.createElement('span');c.className='chip';c.innerHTML=v+' <b>×</b>';c.querySelector('b').onclick=()=>{chosen.delete(v);render();};chips.appendChild(c);});}
+    function pick(v){chosen.add(v);render();}
+  </script>
+</body>
+</html>

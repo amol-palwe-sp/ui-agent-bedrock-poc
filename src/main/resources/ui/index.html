@@ -222,6 +222,45 @@
       </div>
     </section>
 
+    <!-- ── STEP 4: RUN METRICS (copy for Confluence) ────────────────────── -->
+    <section class="card locked" id="sectionMetrics">
+      <div class="card-header">
+        <span class="step-badge">4</span>
+        Run Metrics
+        <div class="card-header-actions">
+          <label class="metrics-header-toggle">
+            <input type="checkbox" id="metricsHeaderToggle" checked>
+            Include header row
+          </label>
+          <button class="btn btn-primary btn-sm" id="btnCopyMetrics">📋 Copy for Confluence</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="metrics-labels">
+          <label>System
+            <input type="text" id="metricsSystem" placeholder="e.g. Coupa">
+          </label>
+          <label>Run #
+            <input type="text" id="metricsRun" placeholder="e.g. 01">
+          </label>
+        </div>
+
+        <div class="metrics-table-wrapper">
+          <table class="metrics-table" id="metricsTable">
+            <thead id="metricsTableHead"></thead>
+            <tbody id="metricsTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="metrics-hint">
+          Paste directly into a Confluence page — it drops in as a table. Fill in
+          <strong>System</strong> and <strong>Run #</strong> before copying. Uncheck
+          “Include header row” for the 2nd run onward so you don’t repeat the header.
+          Part 1 columns come from the last <strong>Generate</strong>; Part 2 from the last run.
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <!-- Toast container -->

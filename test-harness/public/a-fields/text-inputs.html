@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Text inputs — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Text inputs</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Text / email / number / tel <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Standard typed inputs — the TYPE ladder baseline.</p>
+    <form onsubmit="d(event)">
+      <div class="row">
+        <div><label for="fn">First name</label><input type="text" id="fn" aria-label="First name" /></div>
+        <div><label for="ln">Last name</label><input type="text" id="ln" aria-label="Last name" /></div>
+      </div>
+      <label for="em">Email</label><input type="email" id="em" aria-label="Email" />
+      <div class="row">
+        <div><label for="ph">Phone</label><input type="tel" id="ph" aria-label="Phone" /></div>
+        <div><label for="ag">Age</label><input type="number" id="ag" aria-label="Age" /></div>
+      </div>
+      <div style="margin-top:16px;"><button type="submit">Save</button></div>
+    </form>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>function d(e){e.preventDefault();ok.style.display='block';}</script>
+</body>
+</html>

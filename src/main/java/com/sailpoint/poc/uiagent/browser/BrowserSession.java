@@ -984,6 +984,15 @@ public final class BrowserSession implements AutoCloseable {
      *
      * Worst-case total: 2 + 2 + 0.15 + 1 + 2 = ~7.15 s.
      */
+    /**
+     * Public page-ready gate for callers outside the action path (e.g. replay verification,
+     * aggregation). Waits for load states, a short settle, network idle, and DOM stability —
+     * the same sequence used after every action. Best-effort: never throws.
+     */
+    public void waitForPageReady() {
+        settleAfterAction();
+    }
+
     private void settleAfterAction() {
         try {
             page.waitForLoadState(LoadState.DOMCONTENTLOADED,

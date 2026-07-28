@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Popup / new tab — Navigation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Popup / new tab</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>New window flow <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Opens a real popup window (like OAuth/SSO helpers) — the agent follows focus to the new tab.</p>
+    <button onclick="window.open('/b-navigation/popup-child.html','helper','width=460,height=400')">Open helper window</button>
+  </div></main>
+</body>
+</html>

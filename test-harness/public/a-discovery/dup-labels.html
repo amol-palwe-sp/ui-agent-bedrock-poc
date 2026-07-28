@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duplicate labels — Discovery</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Duplicate labels</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <h2>Ambiguous controls <span class="pill ok">Pass</span></h2>
+      <p class="subtitle">Two buttons with the identical label "Next" — exercises <code>stableIdOrdinal</code> disambiguation.</p>
+      <div class="row">
+        <div>
+          <p>Panel A</p>
+          <button onclick="hit('first')">Next</button>
+        </div>
+        <div>
+          <p>Panel B</p>
+          <button onclick="hit('second')">Next</button>
+        </div>
+      </div>
+      <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+    </div>
+  </main>
+  <script>function hit(w){const o=document.getElementById('ok');o.textContent='Clicked the '+w+' Next button.';o.style.display='block';}</script>
+</body>
+</html>

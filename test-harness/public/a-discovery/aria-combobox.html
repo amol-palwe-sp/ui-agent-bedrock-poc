@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARIA combobox — Discovery</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <style>
+    .combo{position:relative;max-width:320px;}
+    .combo .control{border:1px solid var(--line);border-radius:8px;padding:10px 12px;cursor:pointer;background:#fff;}
+    .combo ul{list-style:none;margin:4px 0 0;padding:4px;border:1px solid var(--line);border-radius:8px;position:absolute;left:0;right:0;background:#fff;z-index:5;display:none;}
+    .combo.open ul{display:block;}
+    .combo li{padding:8px 10px;border-radius:6px;cursor:pointer;}
+    .combo li:hover{background:#eef2fb;}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>ARIA combobox</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <h2>Custom dropdown <span class="pill ok">Pass</span></h2>
+      <p class="subtitle">A <code>role=combobox</code> with <code>role=option</code> items — exercises the SELECT_OPTION custom-dropdown ladder.</p>
+      <label id="lbl">Department</label>
+      <div class="combo" id="combo">
+        <div class="control" role="combobox" aria-expanded="false" aria-labelledby="lbl" tabindex="0" onclick="toggle()">Select a department…</div>
+        <ul role="listbox" aria-label="Department">
+          <li role="option" onclick="pick('Engineering')">Engineering</li>
+          <li role="option" onclick="pick('Finance')">Finance</li>
+          <li role="option" onclick="pick('Marketing')">Marketing</li>
+          <li role="option" onclick="pick('Support')">Support</li>
+        </ul>
+      </div>
+      <div style="margin-top:18px;"><button onclick="save()">Save</button></div>
+      <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+    </div>
+  </main>
+  <script>
+    const combo=document.getElementById('combo');let val='';
+    function toggle(){combo.classList.toggle('open');combo.querySelector('.control').setAttribute('aria-expanded',combo.classList.contains('open'));}
+    function pick(v){val=v;combo.querySelector('.control').textContent=v;combo.classList.remove('open');}
+    function save(){if(val){const o=document.getElementById('ok');o.textContent='Saved: '+val;o.style.display='block';}}
+  </script>
+</body>
+</html>

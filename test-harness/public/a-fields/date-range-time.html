@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Date range &amp; time — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Date range &amp; time</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> compound range + time selection has no dedicated action; requires multiple coordinated picks.</div>
+    <h2>Range + time <span class="pill gap">Roadmap gap</span></h2>
+    <div class="row">
+      <div><label for="from">From</label><input type="date" id="from" aria-label="From date" /></div>
+      <div><label for="to">To</label><input type="date" id="to" aria-label="To date" /></div>
+      <div><label for="t">Time</label><input type="time" id="t" aria-label="Time" /></div>
+    </div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+</body>
+</html>

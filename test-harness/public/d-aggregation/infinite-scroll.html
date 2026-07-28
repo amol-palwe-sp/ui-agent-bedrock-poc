@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Infinite scroll — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>#scroller{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Infinite scroll</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <h2>Scroll-to-load <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">More rows load as you approach the bottom (<code>infinite_scroll</code>).</p>
+    <div id="scroller">
+      <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+      <div id="sentinel" class="status" style="padding:12px;text-align:center;">Scroll for more…</div>
+    </div>
+    <div class="status" id="stat" style="margin-top:10px;"></div>
+  </div></main>
+  <script>
+    const SIZE=25;let page=0,loaded=0,total=1,busy=false;
+    const scroller=document.getElementById('scroller');
+    async function load(){if(busy||loaded>=total&&page>0)return;busy=true;page++;
+      const r=await fetch('/api/accounts?page='+page+'&size='+SIZE).then(x=>x.json());total=r.total;
+      document.getElementById('rows').insertAdjacentHTML('beforeend',r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join(''));
+      loaded+=r.rows.length;document.getElementById('stat').textContent=`Loaded ${loaded} of ${total}`;
+      if(loaded>=total)document.getElementById('sentinel').textContent='All accounts loaded.';busy=false;}
+    scroller.addEventListener('scroll',()=>{if(scroller.scrollTop+scroller.clientHeight>=scroller.scrollHeight-40)load();});
+    load();
+  </script>
+</body>
+</html>

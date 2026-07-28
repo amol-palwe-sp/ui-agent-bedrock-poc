@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>URL-param pagination — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>URL-param pagination</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <div class="gap-note"><strong>Ladder:</strong> the page number lives in the URL (<code>?page=N</code>). Navigating pages is a real reload — the agent follows Next links / GOTO and the <code>expectedUrlPattern</code> changes each page.</div>
+    <h2>Page in the URL <span class="pill warn">Ladder</span></h2>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="toolbar">
+      <a class="btn secondary" id="prev">Previous</a>
+      <a class="btn" id="next">Next</a>
+      <span class="status" id="stat"></span>
+    </div>
+  </div></main>
+  <script>
+    const SIZE=25;const page=Math.max(1,parseInt(new URLSearchParams(location.search).get('page'))||1);
+    (async()=>{const r=await fetch('/api/accounts?page='+page+'&size='+SIZE).then(x=>x.json());
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join('');
+      document.getElementById('stat').textContent=`Page ${page} of ${r.totalPages} — ${r.total} accounts`;
+      const base=location.pathname;
+      const prev=document.getElementById('prev'),next=document.getElementById('next');
+      if(page>1)prev.href=base+'?page='+(page-1);else{prev.style.pointerEvents='none';prev.style.opacity=.5;}
+      if(page<r.totalPages)next.href=base+'?page='+(page+1);else{next.style.pointerEvents='none';next.style.opacity=.5;next.textContent='Last page';}
+    })();
+  </script>
+</body>
+</html>

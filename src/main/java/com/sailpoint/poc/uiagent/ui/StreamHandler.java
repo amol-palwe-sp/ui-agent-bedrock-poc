@@ -26,6 +26,8 @@ import java.util.concurrent.TimeUnit;
  *   "DONE:0|1"                      → { type:"done",        exitCode:0|1 }
  *   "ERROR:message"                 → { type:"error",       message:"..." }
  *   "TOKEN_USAGE:in:out:cost"       → { type:"token_usage", inputTokens:N, outputTokens:M, costUsd:X }
+ *   "RUN_STATS:steps:in:out:cost:exitReason"
+ *                                   → { type:"run_stats", steps:N, inputTokens:N, outputTokens:M, costUsd:X, exitReason:"..." }
  * </pre>
  */
 public final class StreamHandler implements HttpHandler {
@@ -111,6 +113,19 @@ public final class StreamHandler implements HttpHandler {
             double costUsd   = safeDouble(parts, 2);
             return String.format("{\"type\":\"token_usage\",\"inputTokens\":%d,\"outputTokens\":%d,\"costUsd\":%.6f}",
                     inputTokens, outputTokens, costUsd);
+        }
+        if (msg.startsWith("RUN_STATS:")) {
+            // RUN_STATS:<steps>:<inputTokens>:<outputTokens>:<costUsd>:<exitReason>
+            String[] parts = msg.substring(10).split(":", 5);
+            int steps        = safeInt(parts, 0);
+            int inputTokens  = safeInt(parts, 1);
+            int outputTokens = safeInt(parts, 2);
+            double costUsd   = safeDouble(parts, 3);
+            String exitReason = parts.length > 4 ? parts[4] : "";
+            return String.format(
+                    "{\"type\":\"run_stats\",\"steps\":%d,\"inputTokens\":%d,\"outputTokens\":%d,"
+                    + "\"costUsd\":%.6f,\"exitReason\":%s}",
+                    steps, inputTokens, outputTokens, costUsd, quoted(exitReason));
         }
         // Fallback — treat as info log
         return logJson("info", msg);

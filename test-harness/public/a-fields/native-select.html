@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Native select — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Native select</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>&lt;select&gt; dropdown <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Native select — SELECT_OPTION by label or value.</p>
+    <label for="dept">Department</label>
+    <select id="dept" aria-label="Department" onchange="pick(this.value)">
+      <option value="">Choose…</option>
+      <option>Engineering</option><option>Finance</option><option>Marketing</option><option>Support</option>
+    </select>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>function pick(){}</script>
+</body>
+</html>

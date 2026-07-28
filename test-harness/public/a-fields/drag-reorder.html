@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Drag reorder — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.list{border:1px solid var(--line);border-radius:8px;padding:6px;max-width:320px}
+  .item{padding:10px 12px;border:1px solid var(--line);border-radius:6px;margin:6px 0;background:#fff;cursor:grab}
+  .item.drag{opacity:.5}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Drag to reorder</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Roadmap gap:</strong> no drag-and-drop action. HTML5 drag events can't be produced by the CLICK/TYPE ladder.</div>
+    <h2>Reorderable list <span class="pill gap">Roadmap gap</span></h2>
+    <div class="list" id="list"></div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    const list=document.getElementById('list');let dragEl=null;
+    ['Task A','Task B','Task C','Task D'].forEach(t=>{const d=document.createElement('div');d.className='item';d.draggable=true;d.textContent=t;d.setAttribute('aria-label',t);
+      d.addEventListener('dragstart',()=>{dragEl=d;d.classList.add('drag');});
+      d.addEventListener('dragend',()=>d.classList.remove('drag'));
+      d.addEventListener('dragover',e=>{e.preventDefault();const a=[...list.children];if(a.indexOf(dragEl)<a.indexOf(d))list.insertBefore(dragEl,d.nextSibling);else list.insertBefore(dragEl,d);});
+      list.appendChild(d);});
+  </script>
+</body>
+</html>

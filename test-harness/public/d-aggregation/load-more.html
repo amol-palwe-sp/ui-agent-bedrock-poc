@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Load more — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Load more</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <h2>Append-on-click <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Rows accumulate; the "Load more" button disappears at the end (<code>load_more</code>).</p>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="toolbar"><button id="more" onclick="load()">Load more</button><span class="status" id="stat"></span></div>
+  </div></main>
+  <script>
+    const SIZE=25;let page=0,loaded=0,total=0;
+    async function load(){page++;const r=await fetch('/api/accounts?page='+page+'&size='+SIZE).then(x=>x.json());total=r.total;
+      document.getElementById('rows').insertAdjacentHTML('beforeend',r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join(''));
+      loaded+=r.rows.length;document.getElementById('stat').textContent=`Loaded ${loaded} of ${total}`;
+      if(loaded>=total)document.getElementById('more').style.display='none';}
+    load();
+  </script>
+</body>
+</html>

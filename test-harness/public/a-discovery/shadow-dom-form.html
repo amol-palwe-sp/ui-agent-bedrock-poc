@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shadow DOM form — Discovery</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Shadow DOM form</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <div class="gap-note"><strong>Roadmap gap (expected-fail):</strong> the fields live inside an open shadow root
+        of a custom element. <code>fingerprint-scrape.js</code> does not traverse <code>shadowRoot</code>, so the agent
+        sees an empty component.</div>
+      <h2>Web component <span class="pill gap">Roadmap gap</span></h2>
+      <user-form></user-form>
+    </div>
+  </main>
+  <script>
+    class UserForm extends HTMLElement {
+      connectedCallback() {
+        const root = this.attachShadow({ mode: 'open' });
+        root.innerHTML = `
+          <style>
+            label{display:block;font-weight:600;font-size:13px;margin:12px 0 5px;}
+            input{width:100%;padding:10px 12px;border:1px solid #e2e7f0;border-radius:8px;}
+            button{margin-top:16px;background:#2f6fed;color:#fff;border:0;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer;}
+            .ok{margin-top:14px;color:#1a8f4c;font-weight:600;display:none;}
+          </style>
+          <label>Full name</label>
+          <input type="text" aria-label="Full name" />
+          <button id="save">Save</button>
+          <div class="ok" id="ok">Saved (inside shadow root).</div>`;
+        root.getElementById('save').addEventListener('click', () => {
+          root.getElementById('ok').style.display = 'block';
+        });
+      }
+    }
+    customElements.define('user-form', UserForm);
+  </script>
+</body>
+</html>

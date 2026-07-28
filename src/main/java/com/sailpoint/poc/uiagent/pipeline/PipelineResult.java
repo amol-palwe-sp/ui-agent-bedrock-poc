@@ -50,6 +50,8 @@ public final class PipelineResult {
     private final TokenUsage                  totalUsage;
     private final String                      errorMessage;
     private final String                      finalUrl;
+    /** Number of agent-loop steps executed (0 when not applicable, e.g. NETWORK-only). */
+    private final int                         agentSteps;
 
     // ── Aggregation-only ──────────────────────────────────────────────────────
     private final int                         rowsScraped;
@@ -59,6 +61,11 @@ public final class PipelineResult {
     private final List<Map<String,String>>    previewRows;
     /** Which strategy was ultimately used (null for PROVISIONING tasks). */
     private final AggregationMode             strategyUsed;
+    /**
+     * Expected total accounts detected from the page (e.g. "of 324 results").
+     * {@code null} when the page displays no total indicator.
+     */
+    private final Integer                     expectedTotalAccounts;
 
     private PipelineResult(Builder b) {
         this.taskType     = b.taskType;
@@ -67,6 +74,7 @@ public final class PipelineResult {
         this.totalUsage   = b.totalUsage   != null ? b.totalUsage : TokenUsage.ZERO;
         this.errorMessage = b.errorMessage != null ? b.errorMessage : "";
         this.finalUrl     = b.finalUrl     != null ? b.finalUrl    : "";
+        this.agentSteps   = b.agentSteps;
         this.rowsScraped  = b.rowsScraped;
         this.pagesScraped = b.pagesScraped;
         this.csvPath      = b.csvPath      != null ? b.csvPath     : "";
@@ -76,7 +84,8 @@ public final class PipelineResult {
         this.previewRows  = b.previewRows  != null
                 ? Collections.unmodifiableList(b.previewRows)
                 : Collections.emptyList();
-        this.strategyUsed = b.strategyUsed;
+        this.strategyUsed           = b.strategyUsed;
+        this.expectedTotalAccounts  = b.expectedTotalAccounts;
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -88,6 +97,8 @@ public final class PipelineResult {
     public String                     errorMessage(){ return errorMessage; }
     /** URL the browser was on when the pipeline completed (or failed). */
     public String                     finalUrl()    { return finalUrl; }
+    /** Number of agent-loop steps executed (0 when not applicable). */
+    public int                        agentSteps()  { return agentSteps; }
 
     // Aggregation-only (0 / empty for PROVISIONING)
     public int                        rowsScraped()  { return rowsScraped; }
@@ -97,6 +108,11 @@ public final class PipelineResult {
     public List<Map<String,String>>   previewRows()  { return previewRows; }
     /** The aggregation strategy that was actually used (null for PROVISIONING). */
     public AggregationMode            strategyUsed() { return strategyUsed; }
+    /**
+     * Expected total accounts detected from the page oracle, or {@code null} when unavailable.
+     * Compare against {@link #rowsScraped()} to verify completeness.
+     */
+    public Integer                    expectedTotalAccounts() { return expectedTotalAccounts; }
 
     // ── Static factory helpers ────────────────────────────────────────────────
 
@@ -142,12 +158,14 @@ public final class PipelineResult {
         TokenUsage               totalUsage   = TokenUsage.ZERO;
         String                   errorMessage = "";
         String                   finalUrl     = "";
+        int                      agentSteps;
         int                      rowsScraped;
         int                      pagesScraped;
         String                   csvPath      = "";
-        List<String>             headers      = Collections.emptyList();
-        List<Map<String,String>> previewRows  = Collections.emptyList();
-        AggregationMode          strategyUsed = null;
+        List<String>             headers               = Collections.emptyList();
+        List<Map<String,String>> previewRows           = Collections.emptyList();
+        AggregationMode          strategyUsed          = null;
+        Integer                  expectedTotalAccounts = null;
 
         Builder taskType(PipelineConfig.TaskType t)     { this.taskType = t;      return this; }
         Builder success(boolean s)                      { this.success = s;       return this; }
@@ -155,12 +173,14 @@ public final class PipelineResult {
         Builder totalUsage(TokenUsage u)                { this.totalUsage = u;    return this; }
         Builder errorMessage(String m)                  { this.errorMessage = m;  return this; }
         Builder finalUrl(String u)                      { this.finalUrl = u;      return this; }
+        Builder agentSteps(int n)                       { this.agentSteps = n;    return this; }
         Builder rowsScraped(int n)                      { this.rowsScraped = n;   return this; }
         Builder pagesScraped(int n)                     { this.pagesScraped = n;  return this; }
         Builder csvPath(String p)                       { this.csvPath = p;       return this; }
         Builder headers(List<String> h)                 { this.headers = h;       return this; }
         Builder previewRows(List<Map<String,String>> r) { this.previewRows = r;   return this; }
-        Builder strategyUsed(AggregationMode m)         { this.strategyUsed = m;  return this; }
+        Builder strategyUsed(AggregationMode m)         { this.strategyUsed = m;           return this; }
+        Builder expectedTotalAccounts(Integer n)        { this.expectedTotalAccounts = n;   return this; }
 
         PipelineResult build() { return new PipelineResult(this); }
     }

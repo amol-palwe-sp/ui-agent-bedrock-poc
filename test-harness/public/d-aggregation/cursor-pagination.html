@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cursor pagination — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Cursor pagination</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <div class="gap-note"><strong>Ladder:</strong> no page index — the server returns a <code>nextCursor</code>. The agent clicks Next until it disables (no cursor concept in the pattern model).</div>
+    <h2>Cursor "load after" <span class="pill warn">Ladder</span></h2>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table>
+    <div class="toolbar"><button id="next" onclick="load()">Next</button><span class="status" id="stat"></span></div>
+  </div></main>
+  <script>
+    let cursor=0,loaded=0,total=0;
+    async function load(){const r=await fetch('/api/accounts/cursor?after='+cursor+'&limit=25').then(x=>x.json());total=r.total;
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td></tr>`).join('');
+      loaded+=r.rows.length;document.getElementById('stat').textContent=`Shown ${loaded} of ${total}`;
+      if(r.nextCursor===null){document.getElementById('next').disabled=true;}else{cursor=r.nextCursor;}}
+    load();
+  </script>
+</body>
+</html>

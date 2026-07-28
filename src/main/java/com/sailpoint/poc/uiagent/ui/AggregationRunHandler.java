@@ -7,6 +7,7 @@ import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.pipeline.AgentPipeline;
 import com.sailpoint.poc.uiagent.pipeline.PipelineConfig;
 import com.sailpoint.poc.uiagent.pipeline.PipelineResult;
+import com.sailpoint.poc.uiagent.pipeline.PipelineMode;
 import com.sailpoint.poc.uiagent.pipeline.PipelineStatus;
 import com.sailpoint.poc.uiagent.pipeline.ProgressListener;
 import com.sun.net.httpserver.HttpExchange;
@@ -16,6 +17,7 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.BlockingQueue;
@@ -75,8 +77,31 @@ public final class AggregationRunHandler implements HttpHandler {
         String goalLine = req.optString("goalLine", "").trim();
         String url      = req.optString("url",      "").trim();
 
-        if (goalLine.isBlank()) { sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}"); return; }
-        if (url.isBlank())      { sendJson(ex, 400, "{\"error\":\"Missing url\"}");      return; }
+        // Execution mode (Run / Record / Replay) — mirrors the provisioning window (RunRequest).
+        String  rawRunMode = req.optString("mode", "RUN").trim().toUpperCase();
+        boolean isReplay   = "REPLAY".equals(rawRunMode);
+        boolean isRecord   = "RECORD".equals(rawRunMode);
+        PipelineMode pipelineMode = isReplay ? PipelineMode.REPLAY
+                : isRecord ? PipelineMode.RECORD : PipelineMode.GENERATE;
+        String scriptPath = req.optString("scriptPath", "").trim();
+        String scriptName = req.optString("scriptName", "").trim();
+
+        Map<String, String> tokens = new HashMap<>();
+        JSONObject tv = req.optJSONObject("tokenValues");
+        if (tv != null) {
+            for (String k : tv.keySet()) tokens.put(k, tv.optString(k, ""));
+        }
+
+        if (isReplay) {
+            if (scriptPath.isBlank()) {
+                sendJson(ex, 400, "{\"error\":\"scriptPath is required for REPLAY mode\"}");
+                return;
+            }
+            // Navigation comes from the recorded script; goalLine is not required for replay.
+        } else {
+            if (goalLine.isBlank()) { sendJson(ex, 400, "{\"error\":\"Missing goalLine\"}"); return; }
+            if (url.isBlank())      { sendJson(ex, 400, "{\"error\":\"Missing url\"}");      return; }
+        }
 
         JSONObject ppJson = req.optJSONObject("paginationPattern");
         PaginationPattern pagination = ppJson != null
@@ -102,6 +127,10 @@ public final class AggregationRunHandler implements HttpHandler {
         final String            finalGoal       = goalLine;
         final PaginationPattern finalPagination = pagination;
         final AggregationMode   finalMode       = aggMode;
+        final PipelineMode      finalPipelineMode = pipelineMode;
+        final String            finalScriptPath   = scriptPath;
+        final String            finalScriptName   = scriptName;
+        final Map<String,String> finalTokens      = tokens;
 
         Thread agent = new Thread(() -> {
             try {
@@ -109,9 +138,14 @@ public final class AggregationRunHandler implements HttpHandler {
 
                 // Build pipeline config — single source of truth for resource setup (REQ-3.3)
                 PipelineConfig pipelineConfig = PipelineConfig.builder()
+                        .mode(finalPipelineMode)
                         .taskType(PipelineConfig.TaskType.AGGREGATION)
                         .startUrl(finalUrl)
                         .goal(finalGoal)
+                        .scriptPath(finalScriptPath)
+                        .scriptName(finalScriptName)
+                        .tokenValues(finalTokens)
+                        .saveScriptTo(config.scriptOutputDir())
                         .paginationPattern(finalPagination)
                         .aggregationMode(finalMode)
                         .networkAggConfig(config.networkAggregation())
@@ -193,6 +227,13 @@ public final class AggregationRunHandler implements HttpHandler {
         statsSb.append(",\"inputTokens\":").append(result.totalUsage().inputTokens());
         statsSb.append(",\"outputTokens\":").append(result.totalUsage().outputTokens());
         statsSb.append(",\"costUsd\":").append(result.totalUsage().totalCostUsd());
+        // Agent-loop steps taken + derived per-step cost (for run-metrics reporting)
+        int agentSteps = result.agentSteps();
+        double perStepCost = agentSteps > 0
+                ? result.totalUsage().totalCostUsd() / agentSteps
+                : 0.0;
+        statsSb.append(",\"agentSteps\":").append(agentSteps);
+        statsSb.append(",\"perStepCostUsd\":").append(perStepCost);
         // Include strategy used (REQ-NA-39, REQ-NA-48)
         String strategyLabel = result.strategyUsed() != null ? result.strategyUsed().name() : "LLM_DOM";
         statsSb.append(",\"strategyUsed\":").append(quoted(strategyLabel));

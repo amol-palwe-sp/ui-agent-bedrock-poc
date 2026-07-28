@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cascading dropdowns — Fields</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Cascading dropdowns</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Dependent selects <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">State options depend on the chosen country — sequential SELECT_OPTION with a re-observe in between.</p>
+    <label for="country">Country</label>
+    <select id="country" aria-label="Country" onchange="fill(this.value)">
+      <option value="">Choose…</option><option>United States</option><option>India</option>
+    </select>
+    <label for="state">State</label>
+    <select id="state" aria-label="State" disabled><option value="">Choose a country first…</option></select>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    const MAP={'United States':['California','Texas','New York'],'India':['Maharashtra','Karnataka','Delhi']};
+    function fill(c){const s=document.getElementById('state');s.innerHTML='<option value="">Choose…</option>';(MAP[c]||[]).forEach(x=>{const o=document.createElement('option');o.textContent=x;s.appendChild(o);});s.disabled=!c;}
+  </script>
+</body>
+</html>

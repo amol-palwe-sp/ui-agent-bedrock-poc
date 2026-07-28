@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Textarea &amp; rich text — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.rich{border:1px solid var(--line);border-radius:8px;padding:10px 12px;min-height:80px;background:#fff;}
+  .rich:empty::before{content:'Type rich notes…';color:#98a2b3;}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Textarea &amp; rich text</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Multiline inputs <span class="pill ok">Pass</span></h2>
+    <p class="subtitle"><code>&lt;textarea&gt;</code> and a <code>contenteditable</code> rich editor.</p>
+    <label for="desc">Description</label>
+    <textarea id="desc" aria-label="Description"></textarea>
+    <label>Rich notes</label>
+    <div class="rich" role="textbox" aria-label="Rich notes" contenteditable="true"></div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+</body>
+</html>

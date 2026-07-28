@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Numbered pages — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.pages{display:flex;gap:4px;flex-wrap:wrap}.pages button.active{background:#0d47c9}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Table — numbered pages</h1><a href="/">Catalog</a></header>
+  <main style="max-width:960px;"><div class="card">
+    <h2>Classic table <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">HTML <code>&lt;table&gt;</code> with numbered pagination (<code>page_numbers</code>). 247 accounts, 25/page.</p>
+    <table><thead><tr><th>Name</th><th>Email</th><th>Department</th><th>Status</th><th>Last sign in</th></tr></thead>
+      <tbody id="rows"></tbody></table>
+    <div class="toolbar"><div class="pages" id="pages"></div><span class="status" id="stat"></span></div>
+  </div></main>
+  <script>
+    const SIZE=25;let total=0,totalPages=0;
+    async function load(p){const r=await fetch('/api/accounts?page='+p+'&size='+SIZE).then(x=>x.json());total=r.total;totalPages=r.totalPages;
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<tr><td>${a.name}</td><td>${a.email}</td><td>${a.department}</td><td>${a.status}</td><td>${a.lastSignIn}</td></tr>`).join('');
+      document.getElementById('stat').textContent=`Page ${p} of ${totalPages} — ${total} accounts`;
+      const pg=document.getElementById('pages');pg.innerHTML='';for(let i=1;i<=totalPages;i++){const b=document.createElement('button');b.textContent=i;b.setAttribute('aria-label','Page '+i);if(i===p)b.className='active';b.onclick=()=>load(i);pg.appendChild(b);}}
+    load(1);
+  </script>
+</body>
+</html>

@@ -20,6 +20,11 @@ public final class ScriptExecutor {
     private static final int MISS_WARN_THRESHOLD = 3;
     private static final double HIGH_MISS_RATE = 0.30;
 
+    /** Bounded wait for an element to render before giving up on a step (recorded WAIT steps are
+     *  not replayed, so this absorbs post-action render latency such as a confirmation dialog). */
+    private static final long ELEMENT_APPEAR_TIMEOUT_MS = 4_000;
+    private static final int ELEMENT_APPEAR_POLL_MS = 500;
+
     private static final String SCROLL_INTO_VIEW_JS = """
             (selector) => {
               const el = document.querySelector(selector);
@@ -63,6 +68,7 @@ public final class ScriptExecutor {
         int succeeded = 0;
         int failed = 0;
         int claudeCalls = 0;
+        boolean goalVerifiedComplete = false;
         TokenUsage cost = TokenUsage.ZERO;
         ReplayResult.Builder result = ReplayResult.builder().stepsTotal(total);
 
@@ -93,12 +99,38 @@ public final class ScriptExecutor {
                     updateStepInScript(script, outcome.updatedStep);
                 }
             } else {
+                logStepFailure(outcome);
+
+                // Generic, system-agnostic salvage before aborting the whole run: a recorded step
+                // (often a trailing confirmation like a "DONE"/"Copy password" dialog) may fail to
+                // relocate even though the task itself already succeeded. Rather than hardcode which
+                // steps are optional per system, we JUDGE FROM THE SCREEN via vision — a success/
+                // error toast or the expected end state — and only finish early when the goal is
+                // genuinely complete. If not, we abort as before.
+                VerifyResult vr = verifyCompletion(script, tokens);
+                if (vr.attempted) {
+                    claudeCalls++;
+                    if (vr.usage != null) {
+                        cost = cost.add(vr.usage);
+                    }
+                }
+                if (vr.complete) {
+                    System.out.printf(
+                            "  → Goal verified complete via screen despite step miss (%s \"%s\"): %s%n",
+                            step.action(), step.elementLabel(), vr.reason);
+                    goalVerifiedComplete = true;
+                    break;
+                }
+
                 failed++;
                 result.addFailed(step.stepIndex(), outcome.error);
-                logStepFailure(outcome);
                 result.success(false);
                 break;
             }
+        }
+
+        if (goalVerifiedComplete) {
+            System.out.println("Replay finished early: goal confirmed complete from on-screen state.");
         }
 
         script.incrementRunCount();
@@ -187,6 +219,27 @@ public final class ScriptExecutor {
             }
         }
 
+        // Level 2.5 — WAIT FOR APPEARANCE (full-DOM retag with bounded polling).
+        // Recorded WAIT steps are intentionally not replayed, so an element that renders a beat
+        // late (e.g. a "Copy password"/DONE dialog that only appears after the submit settles)
+        // would otherwise be declared missing on the very first probe. We poll the full DOM: if
+        // the element is already present but off-screen it resolves on the first pass (Playwright
+        // auto-scrolls on click/type); if it is a late-rendering node we retry until it shows or
+        // the budget expires, then fall through to the scroll/fuzzy/LLM levels.
+        StepOutcome appeared = waitForAppearance(stableId, action);
+        if (appeared != null) {
+            return appeared;
+        }
+
+        // Level 2.7 — STRUCTURAL_HASH remap. Viewport-independent, LLM-free heal for the common
+        // case where the recorded fingerprint/id churned (e.g. text-only buttons like DONE whose
+        // section label shifted) but the element's structural identity is unchanged. Only trusted
+        // on a UNIQUE match — 0 or >1 matches hand off to the next level (Skyvern-style).
+        StepOutcome structural = tryStructuralHash(step, action);
+        if (structural != null) {
+            return structural;
+        }
+
         // Level 3 — SCROLL_INTO_VIEW
         StepOutcome scroll = tryScrollIntoView(step, action);
         if (scroll != null) {
@@ -223,6 +276,78 @@ public final class ScriptExecutor {
         }
 
         return StepOutcome.fail("all replay strategies failed for " + step.elementLabel());
+    }
+
+    /**
+     * Polls the full DOM for {@code stableId} until it appears (and the action succeeds) or the
+     * {@link #ELEMENT_APPEAR_TIMEOUT_MS} budget expires. Returns a successful {@link StepOutcome}
+     * (reported as {@link ReplayStrategy#RETAG}) or {@code null} to let the caller continue down
+     * the fallback ladder. Only genuinely-missing elements incur the wait — elements already in
+     * the DOM resolve on the first poll.
+     */
+    private StepOutcome waitForAppearance(String stableId, ElementAction action) throws Exception {
+        long deadline = System.currentTimeMillis() + ELEMENT_APPEAR_TIMEOUT_MS;
+        boolean warned = false;
+        while (true) {
+            browser.listInteractables(false);
+            if (browser.countByStableId(stableId) > 0) {
+                JSONObject r = action.run(stableId);
+                if (r.optBoolean("ok")) {
+                    if (warned) {
+                        System.out.println("  → Element rendered after wait — retagged, found");
+                    }
+                    return StepOutcome.ok(ReplayStrategy.RETAG);
+                }
+                return null; // in DOM but action failed — hand off to remaining levels
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                return null;
+            }
+            if (!warned) {
+                System.out.println("  → Element not in DOM yet — waiting for it to render...");
+                warned = true;
+            }
+            sleepMs(ELEMENT_APPEAR_POLL_MS);
+        }
+    }
+
+    /**
+     * Remaps the step to a live element by its viewport-independent {@code structuralHash}. Returns
+     * a successful outcome (re-fingerprinting the step) only when exactly one live element matches;
+     * {@code null} on no/ambiguous match or action failure so the caller continues the ladder.
+     */
+    private StepOutcome tryStructuralHash(ScriptStep step, ElementAction action) throws Exception {
+        String wanted = step.structuralHash();
+        if (wanted == null || wanted.isBlank()) {
+            return null;
+        }
+        JSONArray elements = browser.listInteractables(false);
+        String matchId = null;
+        JSONObject matchEl = null;
+        int matches = 0;
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject el = elements.getJSONObject(i);
+            if (wanted.equals(el.optString("structuralHash"))) {
+                matches++;
+                matchId = el.optString("id");
+                matchEl = el;
+            }
+        }
+        if (matches != 1 || matchId == null || matchId.isBlank()) {
+            return null;
+        }
+        JSONObject r = action.run(matchId);
+        if (r.optBoolean("ok")) {
+            ScriptStep updated = step.withUpdatedFingerprint(
+                    matchId,
+                    matchEl.optString("fingerprintString"),
+                    matchEl.optInt("fingerprintLevel"),
+                    jsonFallbacks(matchEl),
+                    ReplayStrategy.STRUCTURAL_HASH);
+            System.out.println("  → STRUCTURAL_HASH remapped to [" + matchId + "]");
+            return StepOutcome.ok(ReplayStrategy.STRUCTURAL_HASH, updated);
+        }
+        return null;
     }
 
     private StepOutcome tryScrollIntoView(ScriptStep step, ElementAction action) throws Exception {
@@ -340,34 +465,189 @@ public final class ScriptExecutor {
         return list;
     }
 
+    /**
+     * Last-resort self-heal: ask Claude (vision) to locate the intended element from a screenshot
+     * plus the live interactables list, then act on the id it returns. Unlike the deterministic
+     * levels this genuinely invokes Bedrock, so its token usage/cost is tracked on the outcome and
+     * a successful match re-fingerprints the step for future runs.
+     */
     private StepOutcome claudeRecover(ScriptStep step, ElementAction action) {
         try {
             JSONArray elements = browser.listInteractables(false);
-            for (int i = 0; i < elements.length(); i++) {
-                JSONObject el = elements.getJSONObject(i);
-                String label = el.optString("elementLabel", el.optString("text", ""));
-                if (step.elementLabel() != null && !step.elementLabel().isBlank()
-                        && label.toLowerCase().contains(
-                        step.elementLabel().toLowerCase().substring(
-                                0, Math.min(12, step.elementLabel().length())))) {
-                    String id = el.optString("id");
-                    JSONObject r = action.run(id);
-                    if (r.optBoolean("ok")) {
-                        ScriptStep updated = step.withUpdatedFingerprint(
-                                id,
-                                el.optString("fingerprintString"),
-                                el.optInt("fingerprintLevel"),
-                                jsonFallbacks(el),
-                                ReplayStrategy.CLAUDE);
-                        return new StepOutcome(true, ReplayStrategy.CLAUDE, updated, null, true, null);
-                    }
+            if (elements.isEmpty()) {
+                return StepOutcome.fail("claude recovery: no interactable elements on page");
+            }
+
+            byte[] screenshot = browser.viewportScreenshotJpeg(85);
+            String elementList = browser.formatElementsForPrompt(elements);
+
+            String system = """
+                    You are a browser-automation self-healing assistant. A recorded replay step
+                    could not locate its target element by fingerprint. Using the screenshot and the
+                    list of currently interactable elements (each line starts with its [id]), pick the
+                    single element that best matches the intended target.
+                    Return ONLY the id value of the best match (the token inside the brackets), or the
+                    exact word NONE if nothing plausibly matches. No prose, no markdown, no brackets.
+                    """;
+
+            String user = "Intended action: " + step.action() + "\n"
+                    + "Target label: " + safe(step.elementLabel()) + "\n"
+                    + "Recorded fingerprint: " + safe(step.fingerprintString()) + "\n\n"
+                    + "Interactable elements:\n" + elementList + "\n"
+                    + "Which [id] is the target? Reply with the id only, or NONE.";
+
+            var res = bedrock.invokeWithVision(system, user, screenshot);
+            TokenUsage usage = res.usage();
+
+            String id = extractElementId(res.text(), elements);
+            if (id == null) {
+                return new StepOutcome(false, null, null,
+                        "claude vision fallback found no matching element", true, usage);
+            }
+
+            JSONObject chosen = findById(elements, id);
+            JSONObject r = action.run(id);
+            if (r.optBoolean("ok")) {
+                ScriptStep updated = step.withUpdatedFingerprint(
+                        id,
+                        chosen != null ? chosen.optString("fingerprintString") : step.fingerprintString(),
+                        chosen != null ? chosen.optInt("fingerprintLevel") : 0,
+                        chosen != null ? jsonFallbacks(chosen) : new ArrayList<>(),
+                        ReplayStrategy.CLAUDE);
+                System.out.println("  → CLAUDE vision located element [" + id + "]");
+                return new StepOutcome(true, ReplayStrategy.CLAUDE, updated, null, true, usage);
+            }
+            return new StepOutcome(false, null, null,
+                    "claude vision fallback: action failed on chosen element [" + id + "]", true, usage);
+        } catch (Exception e) {
+            return StepOutcome.fail("claude recovery error: " + firstLine(e.getMessage()));
+        }
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
+    }
+
+    /**
+     * Resolves the model's reply to a known element id. Accepts a bare/quoted/bracketed id, or any
+     * reply that contains a known id (handles suffixed ids like {@code 38b1b845_1}). Returns
+     * {@code null} for NONE or when no known id is referenced.
+     */
+    private static String extractElementId(String modelText, JSONArray elements) {
+        if (modelText == null) {
+            return null;
+        }
+        String t = modelText.trim();
+        if (t.isEmpty() || t.equalsIgnoreCase("NONE")) {
+            return null;
+        }
+        String cleaned = t.replaceAll("[\\[\\]\"'`]", "").trim();
+        if (findById(elements, cleaned) != null) {
+            return cleaned;
+        }
+        for (int i = 0; i < elements.length(); i++) {
+            String id = elements.getJSONObject(i).optString("id");
+            if (!id.isBlank() && t.contains(id)) {
+                return id;
+            }
+        }
+        return null;
+    }
+
+    private static JSONObject findById(JSONArray elements, String id) {
+        for (int i = 0; i < elements.length(); i++) {
+            JSONObject el = elements.getJSONObject(i);
+            if (id.equals(el.optString("id"))) {
+                return el;
+            }
+        }
+        return null;
+    }
+
+    private static String firstLine(String s) {
+        if (s == null) {
+            return "";
+        }
+        int nl = s.indexOf('\n');
+        return nl >= 0 ? s.substring(0, nl) : s;
+    }
+
+    /**
+     * Screen-based completion check (system-agnostic). Asks Claude, from a fresh screenshot and the
+     * (secret-redacted) goal, whether the task is fully and successfully complete — recognizing
+     * success/error toasts and expected end states. Used to salvage a run when a trailing step
+     * fails to relocate. Best-effort: on any error it reports "not attempted / not complete".
+     */
+    private VerifyResult verifyCompletion(Script script, TokenValues tokens) {
+        try {
+            browser.waitForPageReady();
+            byte[] screenshot = browser.viewportScreenshotJpeg(85);
+            String goal = redactGoal(script.goal(), tokens);
+
+            String system = """
+                    You are a strict web-automation completion checker. Given a screenshot of the
+                    current page and the user's overall goal, decide whether the goal is FULLY and
+                    SUCCESSFULLY complete based only on what is visible on screen.
+                    Treat as COMPLETE only on a clear success signal: a confirmation/success toast or
+                    message, or the expected end state (e.g. a newly created record shown, a dialog
+                    closed returning to the list). Treat an error/validation toast, a still-open form,
+                    or a blank/loading page as NOT complete.
+                    Respond with ONLY compact JSON: {"complete": true|false, "reason": "<short>"}.
+                    No markdown, no extra text.
+                    """;
+
+            String user = "User goal:\n" + goal + "\n\n"
+                    + "Is the goal fully and successfully complete based on the current screen?";
+
+            var res = bedrock.invokeWithVision(system, user, screenshot);
+            JSONObject parsed = parseJsonLoose(res.text());
+            boolean complete = parsed != null && parsed.optBoolean("complete", false);
+            String reason = parsed != null
+                    ? parsed.optString("reason", "")
+                    : "unparseable verifier reply";
+            return new VerifyResult(true, complete, reason, res.usage());
+        } catch (Exception e) {
+            System.out.println("  → completion verification error: " + firstLine(e.getMessage()));
+            return new VerifyResult(false, false, "verifier error", null);
+        }
+    }
+
+    /** Replaces registered secret values in the goal with their {Token} placeholders so real
+     *  credentials never enter the verification prompt. */
+    private static String redactGoal(String goal, TokenValues tokens) {
+        if (goal == null) {
+            return "";
+        }
+        String out = goal;
+        if (tokens != null) {
+            for (Map.Entry<String, String> e : tokens.asMap().entrySet()) {
+                String value = e.getValue();
+                if (value != null && !value.isBlank()) {
+                    out = out.replace(value, "{" + e.getKey() + "}");
                 }
             }
-        } catch (Exception e) {
-            return StepOutcome.fail(e.getMessage());
         }
-        return StepOutcome.fail("claude recovery could not locate element");
+        return out;
     }
+
+    private static JSONObject parseJsonLoose(String text) {
+        if (text == null) {
+            return null;
+        }
+        String t = text.trim();
+        int start = t.indexOf('{');
+        int end = t.lastIndexOf('}');
+        if (start < 0 || end <= start) {
+            return null;
+        }
+        try {
+            return new JSONObject(t.substring(start, end + 1));
+        } catch (RuntimeException e) {
+            return null;
+        }
+    }
+
+    private record VerifyResult(boolean attempted, boolean complete, String reason, TokenUsage usage) {}
 
     private void validatePreReplay(Script script, TokenValues tokens) throws Exception {
         if (script.steps().isEmpty()) {
@@ -447,6 +727,7 @@ public final class ScriptExecutor {
         for (ReplayStrategy s : List.of(
                 ReplayStrategy.FINGERPRINT,
                 ReplayStrategy.RETAG,
+                ReplayStrategy.STRUCTURAL_HASH,
                 ReplayStrategy.SCROLL_INTO_VIEW,
                 ReplayStrategy.PROGRESSIVE_SCROLL,
                 ReplayStrategy.FUZZY,
@@ -464,6 +745,7 @@ public final class ScriptExecutor {
         return switch (s) {
             case FINGERPRINT -> "Fingerprint";
             case RETAG -> "Retag";
+            case STRUCTURAL_HASH -> "Structural-Hash";
             case SCROLL_INTO_VIEW -> "Scroll-Into-View";
             case PROGRESSIVE_SCROLL -> "Progressive";
             case FUZZY -> "Fuzzy";

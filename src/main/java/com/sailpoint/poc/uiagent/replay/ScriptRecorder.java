@@ -4,7 +4,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Builds {@link Script} steps from successful AgentLoop actions (REQ-RR-3).
@@ -12,9 +14,16 @@ import java.util.List;
 public final class ScriptRecorder {
 
     private final Script script;
+    /** Reverse map (real secret value → token name) used to tokenize recorded TYPE values. */
+    private final Map<String, String> valueToToken;
     private int stepIndex;
 
     public ScriptRecorder(String startUrl, String goal, String taskType, String scriptName) {
+        this(startUrl, goal, taskType, scriptName, null);
+    }
+
+    public ScriptRecorder(String startUrl, String goal, String taskType, String scriptName,
+                          TokenValues tokens) {
         this.script = new Script();
         this.script.setStartUrl(startUrl);
         this.script.setGoal(goal);
@@ -22,6 +31,16 @@ public final class ScriptRecorder {
         script.setScriptName(scriptName != null && !scriptName.isBlank()
                 ? scriptName : Script.goalSlug(goal));
         stepIndex = 0;
+
+        Map<String, String> reverse = new HashMap<>();
+        if (tokens != null) {
+            for (Map.Entry<String, String> e : tokens.asMap().entrySet()) {
+                if (e.getValue() != null && !e.getValue().isBlank()) {
+                    reverse.put(e.getValue(), e.getKey());
+                }
+            }
+        }
+        this.valueToToken = reverse;
     }
 
     public Script script() {
@@ -47,6 +66,7 @@ public final class ScriptRecorder {
         int level = 0;
         String label = "";
         int ordinal = 0;
+        String structuralHash = "";
 
         if (elementMeta != null) {
             stableId = elementMeta.optString("id", null);
@@ -55,6 +75,7 @@ public final class ScriptRecorder {
             label = elementMeta.optString("elementLabel",
                     elementMeta.optString("text", ""));
             ordinal = elementMeta.optInt("stableIdOrdinal", 0);
+            structuralHash = elementMeta.optString("structuralHash", "");
             JSONArray fb = elementMeta.optJSONArray("fallbackSelectors");
             if (fb != null) {
                 for (int i = 0; i < fb.length(); i++) {
@@ -91,20 +112,27 @@ public final class ScriptRecorder {
                 false,
                 null,
                 true,
-                0);
+                0,
+                structuralHash);
         script.addStep(step);
         return true;
     }
 
-    /** Replace literal credential-like values with {Token} placeholders when possible. */
-    private static String tokenizeForScript(String text) {
-        if (text.contains("@") && !text.startsWith("{")) {
-            return "{Email}";
+    /**
+     * Replaces a literal typed value with its registered {@code {Token}} placeholder so secrets
+     * are never persisted in the script JSON.
+     *
+     * <p>Values the model already emitted as tokens (starting with {@code '{'}) and any text that
+     * is not a registered secret are stored verbatim. This is a reliable reverse lookup against
+     * the caller-supplied {@link TokenValues}, replacing the previous shape-based heuristic that
+     * mis-tokenized non-secret fields (e.g. any 6+ char value became {@code {Password}}).
+     */
+    private String tokenizeForScript(String text) {
+        if (text == null || text.isBlank() || text.startsWith("{")) {
+            return text;
         }
-        if (text.length() >= 6 && !text.startsWith("{")) {
-            return "{Password}";
-        }
-        return text;
+        String token = valueToToken.get(text);
+        return token != null ? "{" + token + "}" : text;
     }
 
     private static String urlPatternFrom(String url) {

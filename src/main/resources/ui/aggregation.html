@@ -198,7 +198,37 @@
           </div>
         </div>
 
-        <!-- PART G: Run button -->
+        <!-- PART G: Execution mode (Run / Record / Replay) -->
+        <div class="run-mode-section" id="runModeSection">
+          <div class="run-mode-header">Execution mode</div>
+          <div class="run-mode-options">
+            <label class="run-mode-option">
+              <input type="radio" name="runMode" value="RUN" checked>
+              <span><strong>Run</strong> — live aggregation (LLM plans navigation)</span>
+            </label>
+            <label class="run-mode-option">
+              <input type="radio" name="runMode" value="RECORD">
+              <span><strong>Record</strong> — same as Run, plus save a navigation script when done</span>
+            </label>
+            <label class="run-mode-option">
+              <input type="radio" name="runMode" value="REPLAY">
+              <span><strong>Replay</strong> — deterministically re-run a saved script, then aggregate (Claude only on miss)</span>
+            </label>
+          </div>
+          <div id="replayPanel" class="replay-panel hidden">
+            <label class="replay-script-label">Saved script
+              <div class="replay-script-row">
+                <select id="scriptSelect" class="script-select">
+                  <option value="">— Select a script —</option>
+                </select>
+                <button type="button" class="btn btn-ghost btn-sm" id="btnRefreshScripts">↻ Refresh</button>
+              </div>
+            </label>
+            <p class="run-mode-hint" id="scriptMeta">Choose an aggregation script recorded earlier. Token values above apply to TYPE steps.</p>
+          </div>
+        </div>
+
+        <!-- PART H: Run button -->
         <div class="action-row">
           <button class="btn btn-primary btn-lg" id="btnRun" disabled>
             ▶ Run Aggregation
@@ -276,6 +306,44 @@
           Results will appear here once an aggregation completes.
         </div>
 
+      </div>
+    </section>
+
+    <!-- ── SECTION 5: RUN METRICS (copy for Confluence) ─────────────────────── -->
+    <section class="card locked" id="sectionMetrics">
+      <div class="card-header">
+        <span class="step-badge">5</span>
+        Run Metrics
+        <div class="card-header-actions">
+          <label class="metrics-header-toggle">
+            <input type="checkbox" id="metricsHeaderToggle" checked>
+            Include header row
+          </label>
+          <button class="btn btn-primary btn-sm" id="btnCopyMetrics">📋 Copy for Confluence</button>
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="metrics-labels">
+          <label>System
+            <input type="text" id="metricsSystem" placeholder="e.g. Coupa">
+          </label>
+          <label>Run #
+            <input type="text" id="metricsRun" placeholder="e.g. 01">
+          </label>
+        </div>
+
+        <div class="metrics-table-wrapper">
+          <table class="metrics-table" id="metricsTable">
+            <thead id="metricsTableHead"></thead>
+            <tbody id="metricsTableBody"></tbody>
+          </table>
+        </div>
+
+        <div class="metrics-hint">
+          Paste directly into a Confluence page — it drops in as a table. Fill in
+          <strong>System</strong> and <strong>Run #</strong> before copying. Uncheck
+          “Include header row” for the 2nd run onward so you don’t repeat the header.
+        </div>
       </div>
     </section>
 

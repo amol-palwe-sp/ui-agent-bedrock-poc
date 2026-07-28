@@ -4,6 +4,7 @@ import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import com.sailpoint.poc.uiagent.replay.ScriptRecorder;
+import com.sailpoint.poc.uiagent.replay.TokenValues;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -160,6 +161,19 @@ public final class AgentLoop {
     private int multiViewportMaxFrames = 1;
     private ScriptRecorder scriptRecorder;
 
+    /**
+     * Registered credential placeholders. Secret values are substituted into TYPE actions only
+     * at Playwright-execution time; they are never placed into the prompt, history, or logs.
+     * Defaults to an empty set so non-secret runs behave exactly as before.
+     */
+    private TokenValues tokenValues = TokenValues.fromMap(Map.of());
+
+    /**
+     * Number of agent loop iterations (steps) actually executed during the last {@link #run()}.
+     * Surfaced so callers can report "steps taken" alongside token usage.
+     */
+    private int stepsExecuted = 0;
+
     public AgentLoop(
             BedrockAnthropicClient bedrock,
             BrowserSession browser,
@@ -191,8 +205,23 @@ public final class AgentLoop {
         return this;
     }
 
+    /**
+     * Registers credential placeholders (e.g. {@code {Email}}, {@code {Password}}). The LLM only
+     * ever sees the placeholder token; the real value is substituted at the moment of the
+     * Playwright type call and redacted from every prompt, history line, and log entry.
+     */
+    public AgentLoop withTokens(TokenValues tokens) {
+        this.tokenValues = tokens != null ? tokens : TokenValues.fromMap(Map.of());
+        return this;
+    }
+
     public ScriptRecorder scriptRecorder() {
         return scriptRecorder;
+    }
+
+    /** Number of loop iterations executed during the last {@link #run()} call. */
+    public int stepsExecuted() {
+        return stepsExecuted;
     }
 
     public TokenUsage run() throws Exception {
@@ -205,7 +234,10 @@ public final class AgentLoop {
         int    noProgressStreak = 0;
         String lastObservedUrl  = "";
 
+        stepsExecuted = 0;
+
         for (int step = 0; step < maxSteps; step++) {
+            stepsExecuted = step + 1;
             JSONArray elements    = browser.listInteractables();
             String    elementText = browser.formatElementsForPrompt(elements);
 
@@ -372,6 +404,12 @@ public final class AgentLoop {
                                     boolean multiViewport, int screenshotCount) {
         StringBuilder sb = new StringBuilder();
         sb.append("User goal:\n").append(userGoal).append("\n\n");
+        if (!tokenValues.asMap().isEmpty()) {
+            sb.append("Secure placeholders: values wrapped in curly braces (e.g. {Email}, {Password})\n")
+              .append("are secret credentials. When the goal tells you to type one, emit the placeholder\n")
+              .append("verbatim in the TYPE text (e.g. \"text\": \"{Password}\"). Never guess, invent, or\n")
+              .append("reformat the real value — the system substitutes it securely at type time.\n\n");
+        }
         sb.append("Current URL:\n").append(browser.currentUrl()).append("\n\n");
         if (multiViewport) {
             sb.append("Screenshots (").append(screenshotCount).append(" tiles):\n")
@@ -388,7 +426,27 @@ public final class AgentLoop {
             for (String h : history) sb.append("- ").append(h).append('\n');
         }
         sb.append("\nReturn the next JSON plan for step ").append(step).append('.');
-        return sb.toString();
+        // Final safety net: strip any registered secret value that leaked into the message
+        // (e.g. a scraped input value="..."), replacing it with its {Token} placeholder.
+        return redactSecrets(sb.toString());
+    }
+
+    /**
+     * Replaces every registered secret value with its {@code {Token}} placeholder so no secret
+     * reaches the LLM prompt or console/logs. No-op when no tokens are registered.
+     */
+    private String redactSecrets(String s) {
+        if (s == null || s.isEmpty() || tokenValues.asMap().isEmpty()) {
+            return s;
+        }
+        String out = s;
+        for (Map.Entry<String, String> e : tokenValues.asMap().entrySet()) {
+            String value = e.getValue();
+            if (value != null && !value.isBlank()) {
+                out = out.replace(value, "{" + e.getKey() + "}");
+            }
+        }
+        return out;
     }
 
     /** Action types whose successes are worth recording so the LLM doesn't repeat them. */
@@ -520,11 +578,27 @@ public final class AgentLoop {
                 yield browser.clickByStableId(id);
             }
             case "TYPE" -> {
-                String id   = elementIdFromAction(a);
-                String text = a.optString("text", "");
+                String id      = elementIdFromAction(a);
+                String rawText = a.optString("text", "");
+                // Secret isolation: the model emits a {Token}; resolve the real value here only.
+                String typed;
+                try {
+                    typed = tokenValues.substitute(rawText);
+                } catch (TokenValues.MissingTokenException e) {
+                    System.out.println("ACTION TYPE element_id=" + id
+                            + " — BLOCKED: unregistered secret token {" + e.tokenName() + "}");
+                    yield fail("unregistered secret token {" + e.tokenName()
+                            + "} — provide it via --token or the credentials form");
+                }
+                boolean isSecret = !typed.equals(rawText);
                 System.out.println("ACTION TYPE element_id=" + id
-                        + " text=\"" + previewText(text) + "\"");
-                yield browser.typeByStableId(id, text);
+                        + " text=\"" + (isSecret ? rawText : previewText(typed)) + "\"");
+                JSONObject typeResult = browser.typeByStableId(id, typed);
+                // Never echo a resolved secret back through logs (e.g. the already_correct value).
+                if (isSecret && typeResult.has("value")) {
+                    typeResult.put("value", rawText);
+                }
+                yield typeResult;
             }
             case "SELECT_OPTION" -> {
                 String id    = elementIdFromAction(a);

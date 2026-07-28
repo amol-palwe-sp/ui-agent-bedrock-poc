@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Virtualized list — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>#vp{height:440px;overflow:auto;border:1px solid var(--line);border-radius:8px;position:relative}
+  #spacer{position:relative}.vrow{position:absolute;left:0;right:0;height:40px;display:grid;grid-template-columns:1.5fr 2fr 1fr 1fr;align-items:center;border-bottom:1px solid var(--line)}
+  .vrow>div{padding:0 12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Virtualized list</h1><a href="/">Catalog</a></header>
+  <main style="max-width:900px;"><div class="card">
+    <div class="gap-note"><strong>Ladder / stress:</strong> only ~20 rows exist in the DOM at any moment; off-screen rows are recycled. The agent must scroll and re-scrape to capture everything.</div>
+    <h2>Windowed rendering <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">247 rows, virtualized. Row height 40px.</p>
+    <div id="vp"><div id="spacer"></div></div>
+    <div class="status" id="stat" style="margin-top:10px;"></div>
+  </div></main>
+  <script>
+    const ROW=40,BUF=4;let rows=[];
+    const vp=document.getElementById('vp'),spacer=document.getElementById('spacer');
+    async function boot(){rows=await fetch('/api/accounts?page=1&size=200').then(x=>x.json()).then(r=>r.rows.concat([]));
+      // fetch remaining
+      const r2=await fetch('/api/accounts?page=2&size=200').then(x=>x.json());rows=rows.concat(r2.rows);
+      spacer.style.height=(rows.length*ROW)+'px';render();document.getElementById('stat').textContent=rows.length+' accounts (virtualized; ~20 in DOM)';}
+    function render(){const top=vp.scrollTop;const start=Math.max(0,Math.floor(top/ROW)-BUF);const count=Math.ceil(vp.clientHeight/ROW)+BUF*2;
+      const end=Math.min(rows.length,start+count);let html='';for(let i=start;i<end;i++){const a=rows[i];
+        html+=`<div class="vrow" role="row" style="top:${i*ROW}px"><div>${a.name}</div><div>${a.email}</div><div>${a.department}</div><div>${a.status}</div></div>`;}
+      spacer.innerHTML=html;}
+    vp.addEventListener('scroll',render);boot();
+  </script>
+</body>
+</html>

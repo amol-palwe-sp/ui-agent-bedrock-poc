@@ -1052,6 +1052,79 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Run Metrics (copy for Confluence) ─────────────────────────────────────── */
+.metrics-header-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-right: 12px;
+}
+
+.metrics-labels {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.metrics-labels label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.metrics-labels input {
+  width: 160px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.metrics-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.metrics-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.metrics-table th,
+.metrics-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.metrics-table th {
+  background: #f5f7fa;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.metrics-table tr:last-child td { border-bottom: none; }
+
+.metrics-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 10px;
+  line-height: 1.5;
+}
+
+.metrics-hint strong { color: var(--text); }
+
 /* ── Utility ───────────────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 

@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Checkbox group — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.opt{display:flex;align-items:center;gap:8px;margin:8px 0}.opt input{width:auto}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Checkbox group</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Multiple checkboxes <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Select several — dedicated checkbox toggle applied per option.</p>
+    <fieldset style="border:1px solid var(--line);border-radius:8px;padding:12px;"><legend>Notification channels</legend>
+      <label class="opt"><input type="checkbox" aria-label="Email" /> Email</label>
+      <label class="opt"><input type="checkbox" aria-label="SMS" /> SMS</label>
+      <label class="opt"><input type="checkbox" aria-label="Push" /> Push</label>
+      <label class="opt"><input type="checkbox" aria-label="Slack" /> Slack</label>
+    </fieldset>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+</body>
+</html>

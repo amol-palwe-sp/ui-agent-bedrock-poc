@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Provisioning — Replay resilience</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Provisioning form</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <h2>Create user <span class="pill ok">Replay target</span></h2>
+      <p class="subtitle">Record a script on <code>?variant=1</code>, then replay it on <code>?variant=2..7</code>.
+        Each variant mutates structure (reorder / classes / ids / wrappers / i18n / theme) while keeping the same logical fields.</p>
+
+      <form id="form" onsubmit="finish(event)">
+        <div data-reorder-group>
+          <div class="name-block"><!--item-->
+            <label for="firstName">First name</label>
+            <input type="text" id="firstName" class="field-input" name="firstName" aria-label="First name" />
+          </div><!--item-->
+          <div class="name-block">
+            <label for="lastName">Last name</label>
+            <input type="text" id="lastName" class="field-input" name="lastName" aria-label="Last name" />
+          </div>
+        </div><!--/reorder-->
+
+        <label for="email">Email</label>
+        <input type="email" id="email" class="field-input" name="email" aria-label="Email" />
+
+        <label for="department">Department</label>
+        <select id="department" class="field-select" name="department" aria-label="Department">
+          <option value="">Choose…</option>
+          <option>Engineering</option>
+          <option>Finance</option>
+          <option>Marketing</option>
+          <option>Support</option>
+        </select>
+
+        <div style="margin-top:20px;">
+          <button type="submit" class="primary-btn" aria-label="Create user">Create user</button>
+        </div>
+      </form>
+      <div id="ok" class="done-banner" style="display:none;margin-top:16px;">User created.</div>
+    </div>
+  </main>
+  <script>
+    function finish(e){ e.preventDefault(); document.getElementById('ok').style.display='block'; }
+  </script>
+</body>
+</html>

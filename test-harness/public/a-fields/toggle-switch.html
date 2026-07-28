@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Toggle switch — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.sw{width:46px;height:26px;border-radius:999px;background:#cbd5e1;position:relative;cursor:pointer;transition:.15s}
+  .sw::after{content:'';position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.15s}
+  .sw[aria-checked=true]{background:var(--brand)}.sw[aria-checked=true]::after{left:23px}
+  .r{display:flex;align-items:center;gap:12px;margin:12px 0}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Toggle switch</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>role=switch <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">ARIA switch toggled via CLICK.</p>
+    <div class="r"><div class="sw" role="switch" aria-checked="false" aria-label="Enable notifications" tabindex="0" onclick="tog(this)"></div><span>Enable notifications</span></div>
+    <div class="r"><div class="sw" role="switch" aria-checked="false" aria-label="Dark mode" tabindex="0" onclick="tog(this)"></div><span>Dark mode</span></div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>function tog(el){el.setAttribute('aria-checked',el.getAttribute('aria-checked')!=='true');}</script>
+</body>
+</html>

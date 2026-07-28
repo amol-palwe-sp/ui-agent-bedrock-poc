@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Native dialogs — Navigation</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Native alert / confirm</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Blocking browser dialogs <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Uses <code>confirm()</code> and <code>alert()</code> — the agent auto-dismisses them so they never block.</p>
+    <button onclick="del()">Delete item</button>
+    <button class="secondary" onclick="cont()">Continue</button>
+    <div id="log" class="status" style="margin-top:14px;"></div>
+    <div id="done" class="done-banner" style="display:none;margin-top:14px;">Flow completed.</div>
+  </div></main>
+  <script>
+    function del(){const r=confirm('Really delete this item?');document.getElementById('log').textContent='confirm() returned '+r+' (auto-dismissed).';}
+    function cont(){alert('Heads up: this is an alert.');document.getElementById('done').style.display='block';}
+  </script>
+</body>
+</html>

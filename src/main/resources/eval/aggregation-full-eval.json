@@ -1,0 +1,120 @@
+{
+  "defaults": {
+    "runsPerSystem": 5
+  },
+  "systems": [
+    {
+      "id": "coupa_uat_users",
+      "description": "Coupa UAT — full aggregation eval",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Coupa_AggUsers.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "expectedTotalAccounts": 1500,
+      "credentials": {
+        "identifier": "amol.palwe@sailpoint.com",
+        "secret": "COUPA@S09u@M09u"
+      },
+      "groundTruth": {
+        "navigationGoal": "navigate to 'https://sailpoint-uat.coupahost.com/user/list' in the address bar, then wait for redirect to login page, then enter '{Username}' in the Username or Email Address field, then click Next button, then enter '{Password}' in the Password field, then click Sign In button, then wait for redirect to the Users list page",
+        "steps": [
+          "navigate to 'https://sailpoint-uat.coupahost.com/user/list' in the address bar",
+          "wait for redirect to login page",
+          "enter \"{Username}\" in the Username or Email Address field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign In button",
+          "wait for redirect to the Users list page"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "Click the Next button in the pagination controls to advance to the next page of users",
+          "selectorHint": "button[aria-label='Next'], .pagination-next, a[rel='next']"
+        }
+      }
+    },
+    {
+      "id": "google_admin_users",
+      "description": "Google Admin Console — full aggregation eval",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_Aggregation.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "expectedTotalAccounts": 230,
+      "credentials": {
+        "identifier": "amol@sptechdev.com",
+        "secret": "GOOGLE@S09u@M09u"
+      },
+      "groundTruth": {
+        "navigationGoal": "click the Email or phone field, then enter \"{Email}\" in the Email or phone field, then click the Next button, then enter \"{Password}\" in the Enter your password field, then click the Next button, then wait for the User List page to load",
+        "steps": [
+          "click the Email or phone field",
+          "enter \"{Email}\" in the Email or phone field",
+          "click the Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click the Next button",
+          "wait for the User List page to load"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "Click the right-arrow / next-page button in the pagination bar",
+          "selectorHint": "button[aria-label='Next page'], .pagination button:last-child, [data-value='next']"
+        }
+      }
+    },
+    {
+      "id": "bamboohr_users",
+      "description": "BambooHR — full aggregation eval",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/BambooHR_AggUsers.mp4",
+      "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
+      "expectedTotalAccounts": 91,
+      "credentials": {
+        "identifier": "angel.tawade@sailpoint.com",
+        "secret": "Sailpoint@007"
+      },
+      "groundTruth": {
+        "navigationGoal": "click the Email Address field, then enter \"{Email}\" in the Email Address field, then click the Password field, then enter \"{Password}\" in the Password field, then click the Log In button, then click the Yes, Trust this Browser button, then click People in the left navigation menu",
+        "steps": [
+          "click the Email Address field",
+          "enter \"{Email}\" in the Email Address field",
+          "click the Password field",
+          "enter \"{Password}\" in the Password field",
+          "click the Log In button",
+          "click the Yes, Trust this Browser button",
+          "click People in the left navigation menu"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "Click the next-page arrow to load more employees",
+          "selectorHint": "button[aria-label='Next'], .pagination__next, a.next"
+        }
+      }
+    },
+    {
+      "id": "imprivata_users",
+      "description": "Imprivata — full aggregation eval",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Imprivata_AggUsers.mp4",
+      "targetUrl": "http://sailpoint.securelinkcloud.net/ui/user/list",
+      "expectedTotalAccounts": 9,
+      "credentials": {
+        "identifier": "Vikram Pacharne",
+        "secret": "Realvikram@123"
+      },
+      "groundTruth": {
+        "navigationGoal": "navigate to http://sailpoint.securelinkcloud.net/ui/user/list in the address bar, then wait for redirect to login page, then enter \"{Username}\" in the User ID field, then click Next button, then enter \"{Password}\" in the Password field, then click Next button, then wait for application list page to load, then click USER MANAGEMENT icon in the left sidebar, then click Users menu item to reach the user list page",
+        "steps": [
+          "navigate to http://sailpoint.securelinkcloud.net/ui/user/list in the address bar",
+          "wait for redirect to login page",
+          "enter \"{Username}\" in the User ID field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Next button",
+          "wait for application list page to load",
+          "click USER MANAGEMENT icon in the left sidebar",
+          "click Users menu item to reach the user list page"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "Click the next-page button to advance through user records",
+          "selectorHint": "button[aria-label='Next'], .next-page, a[rel='next']"
+        }
+      }
+    }
+  ]
+}

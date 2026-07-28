@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body style="background:transparent">
+  <div style="padding:16px;">
+    <label for="msg">Message</label>
+    <input type="text" id="msg" aria-label="Message" />
+    <div style="margin-top:12px;"><button onclick="document.getElementById('sent').style.display='block'">Send</button></div>
+    <div id="sent" class="done-banner" style="display:none;margin-top:12px;">Sent from inside the frame.</div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "ui-agent-test-harness",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Deterministic dummy-application suite for evaluating UI-Agent script generation, navigation, and aggregation reliability.",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "eval": "node run-eval.js",
+    "eval:quick": "node run-eval.js --tier=A --skip-gaps",
+    "eval:dry": "node run-eval.js --dry-run"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

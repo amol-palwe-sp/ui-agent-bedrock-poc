@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Transfer list — Fields</title><link rel="stylesheet" href="/styles.css" />
+  <style>.dual{display:flex;gap:14px;align-items:center}.box{flex:1;border:1px solid var(--line);border-radius:8px;min-height:160px;padding:6px}
+  .box .it{padding:8px 10px;border-radius:6px;cursor:pointer}.box .it.sel{background:#eef2fb}.mid{display:flex;flex-direction:column;gap:8px}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Transfer list</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Dual listbox <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Select an item, then move it across with the arrow — CLICK sequence.</p>
+    <div class="dual">
+      <div><strong>Available</strong><div class="box" id="avail"></div></div>
+      <div class="mid"><button aria-label="Move right" onclick="move('avail','selected')">→</button><button class="secondary" aria-label="Move left" onclick="move('selected','avail')">←</button></div>
+      <div><strong>Selected</strong><div class="box" id="selected"></div></div>
+    </div>
+    <div style="margin-top:16px;"><button onclick="ok.style.display='block'">Save</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Saved.</div>
+  </div></main>
+  <script>
+    let picked=null;const items=['Dashboards','Reports','Exports','Admin'];
+    const avail=document.getElementById('avail');
+    items.forEach(t=>add(avail,t));
+    function add(box,t){const d=document.createElement('div');d.className='it';d.textContent=t;d.setAttribute('role','option');d.setAttribute('aria-label',t);d.onclick=()=>{box.querySelectorAll('.it').forEach(x=>x.classList.remove('sel'));d.classList.add('sel');picked=d;};box.appendChild(d);}
+    function move(from,to){if(!picked)return;const t=picked.textContent;picked.remove();add(document.getElementById(to),t);picked=null;}
+  </script>
+</body>
+</html>

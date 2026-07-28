@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Modal overlay — Navigation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.backdrop{position:fixed;inset:0;background:rgba(15,25,50,.5);display:none;align-items:center;justify-content:center}
+  .backdrop.open{display:flex}.modal{background:#fff;border-radius:10px;padding:22px;max-width:420px;width:90%}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Modal overlay</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Dialog step <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">A modal opens over the page; the agent must act inside the overlay.</p>
+    <button onclick="m.classList.add('open')">Open dialog</button>
+    <div id="done" class="done-banner" style="display:none;margin-top:14px;">Confirmed.</div>
+  </div></main>
+  <div class="backdrop" id="m" role="dialog" aria-label="Confirm dialog">
+    <div class="modal">
+      <h2>Confirm action</h2>
+      <label for="reason">Reason</label>
+      <input type="text" id="reason" aria-label="Reason" />
+      <div class="toolbar"><button onclick="conf()">Confirm</button><button class="secondary" onclick="m.classList.remove('open')">Cancel</button></div>
+    </div>
+  </div>
+  <script>function conf(){m.classList.remove('open');document.getElementById('done').style.display='block';}</script>
+</body>
+</html>

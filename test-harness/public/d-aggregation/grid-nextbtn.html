@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ARIA grid — Aggregation</title><link rel="stylesheet" href="/styles.css" />
+  <style>.grid{border:1px solid var(--line);border-radius:8px}.grow{display:grid;grid-template-columns:1.5fr 2fr 1fr 1fr;border-bottom:1px solid var(--line)}
+  .grow>div{padding:9px 12px}.grid .head{background:#f0f3fa;font-size:12px;text-transform:uppercase;color:var(--muted)}</style>
+</head>
+<body>
+  <header class="appbar"><h1>ARIA grid — Next button</h1><a href="/">Catalog</a></header>
+  <main style="max-width:900px;"><div class="card">
+    <h2>role=grid <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Non-table grid with a Next button only (<code>next_button</code>).</p>
+    <div class="grid" role="grid" aria-label="Accounts">
+      <div class="grow head" role="row"><div role="columnheader">Name</div><div role="columnheader">Email</div><div role="columnheader">Department</div><div role="columnheader">Status</div></div>
+      <div id="rows"></div>
+    </div>
+    <div class="toolbar">
+      <button id="prev" onclick="go(-1)">Previous</button>
+      <button id="next" onclick="go(1)">Next</button>
+      <span class="status" id="stat"></span>
+    </div>
+  </div></main>
+  <script>
+    const SIZE=25;let page=1,totalPages=1;
+    async function load(){const r=await fetch('/api/accounts?page='+page+'&size='+SIZE).then(x=>x.json());totalPages=r.totalPages;
+      document.getElementById('rows').innerHTML=r.rows.map(a=>`<div class="grow" role="row"><div role="gridcell">${a.name}</div><div role="gridcell">${a.email}</div><div role="gridcell">${a.department}</div><div role="gridcell">${a.status}</div></div>`).join('');
+      document.getElementById('stat').textContent=`Page ${page} of ${totalPages} — ${r.total} accounts`;
+      document.getElementById('prev').disabled=page<=1;document.getElementById('next').disabled=page>=totalPages;}
+    function go(d){page=Math.min(Math.max(1,page+d),totalPages);load();}
+    load();
+  </script>
+</body>
+</html>

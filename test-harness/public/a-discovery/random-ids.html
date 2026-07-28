@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Randomized IDs — Discovery</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Randomized IDs</h1><a href="/">Catalog</a></header>
+  <main>
+    <div class="card">
+      <h2>Unstable identifiers <span class="pill ok">Pass</span></h2>
+      <p class="subtitle">Element <code>id</code>/<code>name</code>/<code>class</code> values are regenerated on every load, so a script recorded once must survive via aria/text/structural fingerprint levels (not level-1 id).</p>
+      <label id="lbl-search">Search</label>
+      <input type="search" aria-label="Search" placeholder="Search…" />
+      <div style="margin-top:14px;"><button aria-label="Search">Search</button></div>
+      <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+    </div>
+  </main>
+  <script>
+    // Randomize ids/names/classes each load.
+    const rnd = () => 'z' + Math.random().toString(36).slice(2, 9);
+    document.querySelectorAll('input,button').forEach((el) => {
+      el.id = rnd();
+      el.setAttribute('name', rnd());
+      el.className = rnd();
+    });
+    document.querySelector('button').addEventListener('click', () => {
+      const q = document.querySelector('input').value;
+      const o = document.getElementById('ok'); o.textContent = 'Searched: ' + q; o.style.display = 'block';
+    });
+  </script>
+</body>
+</html>
