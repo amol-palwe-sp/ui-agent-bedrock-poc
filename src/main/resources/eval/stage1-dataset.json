@@ -1,0 +1,1231 @@
+{
+  "_comment": [
+    "Stage 1 (video -> steps) benchmark dataset, organised by UI VARIATION rather than by product.",
+    "Ground truth here is authored from the test-harness scenario catalog (test-harness/public/index.html);",
+    "each case points at a deterministic harness page served at http://localhost:4599.",
+    "TO RUN: start the harness (cd test-harness && npm start) so pages are live, then record one short",
+    "screen-recording per case performing the described task and REPLACE the placeholder `videoPath`.",
+    "Login fixtures (where a page needs them): test.user@demo.local / Demo!Pass123.",
+    "`uiVariety` is the axis we report on: field:*, nav:*, paging:*, discovery:*, tricky:*, look:*, language:*.",
+    "`mode` = PLACEHOLDER means credentials must be tokenised in the output (secret-leak hard gate applies);",
+    "LITERAL means the on-screen demo values are expected verbatim."
+  ],
+  "benchmarks": [
+    {
+      "id": "s1_login",
+      "uiVariety": "discovery:semantic-login",
+      "description": "Semantic login form - baseline email/password sign-in (secret handling)",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/semantic-login.mp4",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"{Email}\" in the Email field",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign in button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email field",    "type": "email"    },
+          { "name": "Password", "label": "Password field", "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "s1_div_role",
+      "uiVariety": "discovery:div-role-widgets",
+      "description": "div[role=button] + contenteditable widgets that look like native inputs",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/div-role-widgets.mp4",
+      "targetUrl": "http://localhost:4599/a-discovery/div-role-widgets.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"testRPA001\" in the Username field, then enter \"this is dummy app\" in the Notes area, then click the Submit button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"testRPA001\" in the Username field",
+          "enter \"this is dummy app\" in the Notes area",
+          "click the Submit button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_dup_labels",
+      "uiVariety": "tricky:dup-labels",
+      "description": "Two identical Next buttons - ambiguous target selection",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/dup-labels.mp4",
+      "targetUrl": "http://localhost:4599/a-discovery/dup-labels.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Panel B Next button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Panel B Next button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_text_inputs",
+      "uiVariety": "field:text",
+      "description": "Plain text / email inputs",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/text-inputs.mp4",
+      "targetUrl": "http://localhost:4599/a-fields/text-inputs.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"Test\" in the First name field, then enter \"RPA\" in the Last name field, then enter \"rpa@tesst.com\" in the Email field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"Test\" in the First name field",
+          "enter \"RPA\" in the Last name field",
+          "enter \"rpa@tesst.com\" in the Email field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_textarea_richtext",
+      "uiVariety": "field:textarea-richtext",
+      "description": "Textarea + contenteditable rich-text area",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/textarea-richtext.mp4",
+      "targetUrl": "http://localhost:4599/a-fields/textarea-richtext.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"tewst appd\" in the Description field, then enter \"andbcj test text\" in the Rich notes area, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"tewst appd\" in the Description field",
+          "enter \"andbcj test text\" in the Rich notes area",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_native_select",
+      "uiVariety": "field:native-select",
+      "description": "Native <select> dropdown",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/native-select.mp4",
+      "targetUrl": "http://localhost:4599/a-fields/native-select.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "select \"Marketing\" from the Department dropdown, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "select \"Marketing\" from the Department dropdown",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_aria_combobox",
+      "uiVariety": "field:aria-combobox",
+      "description": "Custom ARIA listbox combobox",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/aria-combobox.mp4",
+      "targetUrl": "http://localhost:4599/a-fields/aria-combobox-select.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click Select a department..., select \"Finance\" from the Team dropdown, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click Select a department...",
+          "select \"Finance\" from the Team dropdown",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_typeahead",
+      "uiVariety": "field:typeahead",
+      "description": "Type-ahead autocomplete - type, then pick a filtered option",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/typeahead-autocomplete.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"eng\" in the Team search field, then click the Engineering option, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"eng\" in the Team search field",
+          "click the Engineering option",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_cascading_dropdowns",
+      "uiVariety": "field:cascading-dropdowns",
+      "description": "Dependent dropdowns (country -> state)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/cascading-dropdowns.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "select \"United States\" from the Country dropdown, then select \"California\" from the State dropdown, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "select \"United States\" from the Country dropdown",
+          "select \"California\" from the State dropdown",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_checkbox_group",
+      "uiVariety": "field:checkbox-group",
+      "description": "Multiple checkboxes in a group",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/checkbox-group.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "check the \"Email\" notification option, then check the \"SMS\" notification option, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "check the \"Email\" notification option",
+          "check the \"SMS\" notification option",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_radio_group",
+      "uiVariety": "field:radio-group",
+      "description": "Radio-button group",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/radio-group.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "select the \"Premium\" plan, then click the Continue button this completes all steps — do not perform any further actions",
+        "steps": [
+          "select the \"Premium\" plan",
+          "click the Continue button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_toggle_switch",
+      "uiVariety": "field:toggle",
+      "description": "role=switch toggle",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/toggle-switch.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "turn on the \"Enable notifications\" toggle, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "turn on the \"Enable notifications\" toggle",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_segmented_otp",
+      "uiVariety": "field:otp",
+      "description": "Segmented one-time-code input (one box per digit)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/segmented-otp.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter the code \"123456\" into the verification boxes, then click the Verify button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter the code \"123456\" into the verification boxes",
+          "click the Verify button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_masked_input",
+      "uiVariety": "field:masked-input",
+      "description": "Masked/formatted input (phone)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/masked-input.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"4155550123\" in the Phone field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"4155550123\" in the Phone field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_star_rating",
+      "uiVariety": "field:star-rating",
+      "description": "Clickable icon star rating",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/star-rating.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "set the rating to 4 stars, then click the Submit button this completes all steps — do not perform any further actions",
+        "steps": [
+          "set the rating to 4 stars",
+          "click the Submit button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_transfer_list",
+      "uiVariety": "field:transfer-list",
+      "description": "Dual-listbox transfer (move item Available -> Selected)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/transfer-list.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "move \"Reports\" from Available to Selected, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "move \"Reports\" from Available to Selected",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_multiselect_chips",
+      "uiVariety": "field:multiselect-chips",
+      "description": "Multi-select with chips",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/multiselect-chips.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "select \"Engineering\" in the Groups field, then select \"Finance\" in the Groups field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "select \"Engineering\" in the Groups field",
+          "select \"Finance\" in the Groups field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_date_picker",
+      "uiVariety": "field:date-picker",
+      "description": "Calendar popup date picker",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/date-picker.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "set the Start date to 15 August 2026 using the calendar, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "set the Start date to 15 August 2026 using the calendar",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_date_range_time",
+      "uiVariety": "field:date-range-time",
+      "description": "Date range + time picker",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/date-range-time.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "set the date range from 10 to 20 August 2026, then set the time to 14:30, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "set the date range from 10 to 20 August 2026",
+          "set the time to 14:30",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_slider_range",
+      "uiVariety": "field:slider",
+      "description": "Range slider drag",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/slider-range.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "set the Budget slider to 750, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "set the Budget slider to 750",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_file_upload",
+      "uiVariety": "field:file-upload",
+      "description": "File input attachment",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/file-upload.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "upload a file in the Attachment field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "upload a file in the Attachment field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_drag_reorder",
+      "uiVariety": "field:drag-reorder",
+      "description": "Drag-to-reorder list items",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-fields/drag-reorder.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "drag \"Task C\" above \"Task A\", then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "drag \"Task C\" above \"Task A\"",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_multipage_wizard",
+      "uiVariety": "nav:multipage-wizard",
+      "description": "Classic multi-page wizard where the URL changes between steps",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/multipage-wizard-1.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"Ada\" in the Name field, then click the Next button, then select \"Finance\" from the Department dropdown, then click the Next button, then click the Finish button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"Ada\" in the Name field",
+          "click the Next button",
+          "select \"Finance\" from the Department dropdown",
+          "click the Next button",
+          "click the Finish button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_spa_router",
+      "uiVariety": "nav:spa-router",
+      "description": "SPA route change via pushState (no full page reload)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/spa-router.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click Products, then click Settings, then click the Save preferences button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click Products",
+          "click Settings",
+          "click the Save preferences button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_modal_overlay",
+      "uiVariety": "nav:modal",
+      "description": "Modal / overlay dialog step",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/modal-overlay.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Open dialog button, then enter \"confirmed\" in the Reason field, then click the Confirm button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Open dialog button",
+          "enter \"confirmed\" in the Reason field",
+          "click the Confirm button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_alert_confirm",
+      "uiVariety": "nav:alert-confirm",
+      "description": "Native alert/confirm dialog auto-dismiss",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/native-alert-confirm.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Delete item button, then click the Continue button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Delete item button",
+          "click the Continue button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_popup_newtab",
+      "uiVariety": "nav:popup-newtab",
+      "description": "New tab / popup window following",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/popup-newtab.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Open helper window button, then enter \"code123\" in the Code field, then click the Apply button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Open helper window button",
+          "enter \"code123\" in the Code field",
+          "click the Apply button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_spinner_skeleton",
+      "uiVariety": "nav:spinner-skeleton",
+      "description": "Spinner/skeleton settle wait before the next action",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/slow-spinner-skeleton.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Load profile button, then wait for the profile to load, then enter \"Ada\" in the Name field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Load profile button",
+          "wait for the profile to load",
+          "enter \"Ada\" in the Name field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_branch_wizard",
+      "uiVariety": "nav:branch-wizard",
+      "description": "Branching wizard where the next step depends on an earlier choice",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/conditional-branch-wizard.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "select \"Business\" account type, then click the Next button, then enter \"Acme Inc\" in the Company field, then click the Finish button this completes all steps — do not perform any further actions",
+        "steps": [
+          "select \"Business\" account type",
+          "click the Next button",
+          "enter \"Acme Inc\" in the Company field",
+          "click the Finish button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_tabbed_nav",
+      "uiVariety": "nav:tabs",
+      "description": "role=tab navigation between panels",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/tabbed-nav.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "click the Billing tab, then enter \"4242\" in the Card field, then click the Save button this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Billing tab",
+          "enter \"4242\" in the Card field",
+          "click the Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_accordion_tree",
+      "uiVariety": "nav:accordion-tree",
+      "description": "Accordion / tree expand then select",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/accordion-tree-nav.mp4",
+      "targetUrl": "http://localhost:4599/b-navigation/accordion-tree-nav.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "expand the Administration section, then click Users, then click the Add button this completes all steps — do not perform any further actions",
+        "steps": [
+          "expand the Administration section",
+          "click Users",
+          "click the Add button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_hover_megamenu",
+      "uiVariety": "nav:hover-megamenu",
+      "description": "Hover-triggered mega-menu",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/b-navigation/hover-megamenu.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "hover over Products to open the menu, then click Analytics this completes all steps — do not perform any further actions",
+        "steps": [
+          "hover over Products to open the menu",
+          "click Analytics"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_provisioning_baseline",
+      "uiVariety": "look:baseline",
+      "description": "Provisioning create-user form - baseline light theme, English labels",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/c-replay/provisioning.html?variant=1",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"Ada\" in the First name field, then enter \"Lovelace\" in the Last name field, then enter \"ada@demo.local\" in the Email field, then select \"Engineering\" from the Department dropdown, then click the Create user button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"Ada\" in the First name field",
+          "enter \"Lovelace\" in the Last name field",
+          "enter \"ada@demo.local\" in the Email field",
+          "select \"Engineering\" from the Department dropdown",
+          "click the Create user button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_provisioning_i18n_de",
+      "uiVariety": "language:i18n-german",
+      "description": "Provisioning create-user form - German labels (same task, translated UI)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/c-replay/provisioning.html?variant=6",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"Ada\" in the Vorname field, then enter \"Lovelace\" in the Nachname field, then enter \"ada@demo.local\" in the E-Mail field, then select \"Engineering\" from the Abteilung dropdown, then click the Benutzer erstellen button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"Ada\" in the Vorname field",
+          "enter \"Lovelace\" in the Nachname field",
+          "enter \"ada@demo.local\" in the E-Mail field",
+          "select \"Engineering\" from the Abteilung dropdown",
+          "click the Benutzer erstellen button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_provisioning_dark",
+      "uiVariety": "look:dark-theme",
+      "description": "Provisioning create-user form - dark theme (same task, English labels)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/c-replay/provisioning.html?variant=7",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"Ada\" in the First name field, then enter \"Lovelace\" in the Last name field, then enter \"ada@demo.local\" in the Email field, then select \"Engineering\" from the Department dropdown, then click the Create user button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"Ada\" in the First name field",
+          "enter \"Lovelace\" in the Last name field",
+          "enter \"ada@demo.local\" in the Email field",
+          "select \"Engineering\" from the Department dropdown",
+          "click the Create user button"
+        ],
+        "paginationPattern": null,
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_numbered",
+      "uiVariety": "paging:page-numbers",
+      "description": "Table with numbered pages",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/table-numbered.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "page through all accounts using the numbered pagination bar this completes all steps — do not perform any further actions",
+        "steps": [
+          "click page number 2 in the pagination bar",
+          "continue to each numbered page until the last page"
+        ],
+        "paginationPattern": {
+          "type": "page_numbers",
+          "description": "A classic HTML table with a pagination bar showing numbered pages (1, 2, 3, ...). Clicking a page number loads that page of accounts.",
+          "selectorHint": ".pagination a, .pagination button, nav[aria-label='pagination'] a"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_nextbtn",
+      "uiVariety": "paging:next-button",
+      "description": "role=grid with a Next button",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/grid-nextbtn.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "page through all accounts by clicking Next until the last page this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Next button",
+          "continue clicking Next until it is disabled on the last page"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "A grid of accounts with a Next button. Clicking Next advances to the next page; Next becomes disabled on the last page.",
+          "selectorHint": "button:contains('Next'), a[rel='next'], .next"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_loadmore",
+      "uiVariety": "paging:load-more",
+      "description": "Load more button appends rows",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/load-more.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "load all accounts by clicking Load more until it disappears this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Load more button",
+          "continue clicking Load more until it disappears"
+        ],
+        "paginationPattern": {
+          "type": "load_more",
+          "description": "A single Load more button below the list. Each click appends the next batch of accounts; the button disappears when all accounts are loaded.",
+          "selectorHint": "button:contains('Load more'), .load-more"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_infinite",
+      "uiVariety": "paging:infinite-scroll",
+      "description": "Infinite scroll loads more on scroll",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/infinite-scroll.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "load all accounts by scrolling to load more this completes all steps — do not perform any further actions",
+        "steps": [
+          "scroll to the bottom of the list to load more accounts",
+          "continue scrolling until no more accounts load"
+        ],
+        "paginationPattern": {
+          "type": "infinite_scroll",
+          "description": "The account list loads more rows automatically as the page is scrolled toward the bottom; there is no pagination control.",
+          "selectorHint": "window scroll / IntersectionObserver sentinel at list end"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_virtualized",
+      "uiVariety": "paging:virtualized",
+      "description": "Virtualized/windowed list (~20 rows in DOM at a time)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/virtualized-list.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "read all accounts from the virtualized list by scrolling through it this completes all steps — do not perform any further actions",
+        "steps": [
+          "scroll down the list to reveal more accounts",
+          "continue scrolling until the end of the list"
+        ],
+        "paginationPattern": {
+          "type": "infinite_scroll",
+          "description": "A windowed list that keeps only ~20 rows in the DOM at a time; scrolling reveals more accounts while earlier rows are recycled out.",
+          "selectorHint": "scroll container with virtualized rows"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_cursor",
+      "uiVariety": "paging:cursor",
+      "description": "Cursor pagination - Next loads after a cursor, no page index",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/cursor-pagination.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "page through all accounts by clicking Next until no more results load this completes all steps — do not perform any further actions",
+        "steps": [
+          "click the Next button to load the next set of accounts",
+          "continue clicking Next until no more results load"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "Cursor-based pagination: a Next button loads the next set of accounts using an opaque cursor (no numbered pages). Next stops working when there are no more results.",
+          "selectorHint": "button:contains('Next'), .load-after"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_urlparam",
+      "uiVariety": "paging:url-param",
+      "description": "URL parameter pagination (?page=N via navigation)",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/url-param-pagination.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "page through all accounts across pages using the page URL parameter this completes all steps — do not perform any further actions",
+        "steps": [
+          "change the page number in the URL to load the next page",
+          "continue to the next page until there are no more results"
+        ],
+        "paginationPattern": {
+          "type": "page_numbers",
+          "description": "Pagination driven by a ?page=N URL parameter; navigating to the next page number loads that page of accounts.",
+          "selectorHint": "?page=N in the address bar / pagination links carrying page param"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_pagesize",
+      "uiVariety": "paging:page-size",
+      "description": "Page-size selector combined with pagination",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/page-size-selector.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "set the page size to 100, then page through all accounts across pages this completes all steps — do not perform any further actions",
+        "steps": [
+          "set the page size to 100 in the page-size selector",
+          "click through each remaining page until the last page"
+        ],
+        "paginationPattern": {
+          "type": "page_numbers",
+          "description": "A page-size selector (e.g. 25/50/100) controls rows per page, alongside a numbered pagination bar. Increasing the page size reduces the number of pages to walk.",
+          "selectorHint": "select[aria-label='page size'], .pagination a"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "s1_pag_merged_headers",
+      "uiVariety": "paging:merged-headers",
+      "description": "Grouped/merged column headers over a paginated table",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/d-aggregation/merged-headers.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "page through all accounts across all pages this completes all steps — do not perform any further actions",
+        "steps": [
+          "click page number 2 in the pagination bar",
+          "continue to each numbered page until the last page"
+        ],
+        "paginationPattern": {
+          "type": "page_numbers",
+          "description": "A table with grouped/merged column headers (a header row spanning multiple columns) above the data rows, with a numbered pagination bar at the bottom.",
+          "selectorHint": ".pagination a, th[colspan] grouped header row"
+        },
+        "tokens": []
+      }
+    },
+    {
+      "id": "eval_001",
+      "uiVariety": "real:provisioning-coupa",
+      "description": "Coupa UAT - Create new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Coupa_CreateUser.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Username or Email Address field, then click Next button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Create button, then enter \"{Login}\" in the Login field, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{Email2}\" in the Email field, then check the \"{AIClassifierCheckbox}\" checkbox, then check the \"{AnalyticsAdminCheckbox}\" checkbox, then select \"{Designation}\" from the Designation dropdown, then click Create button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Username or Email Address field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign In button",
+          "click Create button",
+          "enter \"{Login}\" in the Login field",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{Email2}\" in the Email field",
+          "check the \"{AIClassifierCheckbox}\" checkbox",
+          "check the \"{AnalyticsAdminCheckbox}\" checkbox",
+          "select \"{Designation}\" from the Designation dropdown",
+          "click Create button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",                  "label": "Username or Email Address field", "type": "email"    },
+          { "name": "Password",               "label": "Password field",                  "type": "password" },
+          { "name": "Login",                  "label": "Login field",                     "type": "text"     },
+          { "name": "FirstName",              "label": "First name field",                "type": "text"     },
+          { "name": "LastName",               "label": "Last name field",                 "type": "text"     },
+          { "name": "Email2",                 "label": "Email field",                     "type": "email"    },
+          { "name": "AIClassifierCheckbox",   "label": "AI Classifier checkbox",          "type": "text"     },
+          { "name": "AnalyticsAdminCheckbox", "label": "Analytics Admin checkbox",        "type": "text"     },
+          { "name": "Designation",            "label": "Designation dropdown",            "type": "text"     }
+        ]
+      }
+    },
+  
+    {
+      "id": "eval_003",
+      "uiVariety": "real:provisioning-google",
+      "description": "Google Admin - Add new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_CreateUser.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add new user link, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{PrimaryEmail}\" in the Primary email field, then click ADD NEW USER button, then click DONE button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email or phone field",
+          "click Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click Next button",
+          "click Add new user link",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{PrimaryEmail}\" in the Primary email field",
+          "click ADD NEW USER button",
+          "click DONE button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",        "label": "Email or phone field",        "type": "email"    },
+          { "name": "Password",     "label": "Enter your password field",   "type": "password" },
+          { "name": "FirstName",    "label": "First name field",            "type": "text"     },
+          { "name": "LastName",     "label": "Last name field",             "type": "text"     },
+          { "name": "PrimaryEmail", "label": "Primary email field",         "type": "email"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_004",
+      "uiVariety": "real:provisioning-google",
+      "description": "Google Admin - Reactivate user workflow",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_EnableUser.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add a filter, then enter \"{Filter}\" in the filter field, then click First name starts with \"{Filter}\" option, then click Anand Joshi link, then click REACTIVATE, then click REACTIVATE button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email or phone field",
+          "click Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click Next button",
+          "click Add a filter",
+          "enter \"{Filter}\" in the filter field",
+          "click First name starts with \"{Filter}\" option",
+          "click Anand Joshi link",
+          "click REACTIVATE",
+          "click REACTIVATE button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email or phone field",      "type": "email"    },
+          { "name": "Password", "label": "Enter your password field", "type": "password" },
+          { "name": "Filter",   "label": "filter field",              "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_007",
+      "uiVariety": "real:aggregation-coupa",
+      "description": "Coupa UAT - Login and navigate to user list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Coupa_AggUsers.mp4",
+      "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to https://sailpoint-uat.coupahost.com/user/list in the address bar, then wait for redirect to login page at https://sailpoint-uat.coupahost.com/sessions/new, then enter \"{Email}\" in the Username or Email Address field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Sign In button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to https://sailpoint-uat.coupahost.com/user/list in the address bar",
+          "wait for redirect to login page at https://sailpoint-uat.coupahost.com/sessions/new",
+          "enter \"{Email}\" in the Username or Email Address field",
+          "click the Next button",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign In button"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The users table has a pagination bar at the bottom showing Prev, page numbers (1, 2, 3, ...), and a Next button. Clicking Next navigates to the next page of results. There is also a Per page selector (15, 45, 90).",
+          "selectorHint": "a.next, .pagination a[rel='next'], button:contains('Next')"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Username or Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",                  "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_008",
+      "uiVariety": "real:aggregation-google",
+      "description": "Google Admin - Login and navigate to users list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Google_Aggregation.mp4",
+      "targetUrl": "https://admin.google.com/ac/users",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "click the Email or phone field, then enter \"{Email}\" in the Email or phone field, then click the Next button, then enter \"{Password}\" in the Enter your password field, then click the Next button, then wait for the Google Admin console to load and navigate to the Users list page this completes all steps — do not perform any further actions ",
+        "steps": [
+          "click the Email or phone field",
+          "enter \"{Email}\" in the Email or phone field",
+          "click the Next button",
+          "enter \"{Password}\" in the Enter your password field",
+          "click the Next button",
+          "wait for the Google Admin console to load and navigate to the Users list page"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The users table shows Page X of many at the bottom right with previous and next arrow buttons (< and >) to navigate between pages. A Rows per page dropdown (set to 50) is also present. Tooltips Go to next page and Go to previous page are visible on hover.",
+          "selectorHint": "button[aria-label='Go to next page']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email or phone field",      "type": "email"    },
+          { "name": "Password", "label": "Enter your password field", "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_009",
+      "uiVariety": "real:provisioning-bamboohr",
+      "description": "BambooHR - Create new employee provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/BambooHR_CreateUser.mp4",
+      "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click Log In button, then click No Thanks button, then click People link, then click New Employee button, then click Add Anyway button, then enter \"{FirstName}\" in the First Name* field, then enter \"{LastName}\" in the Last Name* field, then select \"{Department}\" from the Department* dropdown, then select \"{Division}\" from the Division* dropdown, then click Save button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "enter \"{Password}\" in the Password field",
+          "click Log In button",
+          "click No Thanks button",
+          "click People link",
+          "click New Employee button",
+          "click Add Anyway button",
+          "enter \"{FirstName}\" in the First Name* field",
+          "enter \"{LastName}\" in the Last Name* field",
+          "select \"{Department}\" from the Department* dropdown",
+          "select \"{Division}\" from the Division* dropdown",
+          "click Save button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",      "label": "Email Address field", "type": "email"    },
+          { "name": "Password",   "label": "Password field",      "type": "password" },
+          { "name": "FirstName",  "label": "First Name* field",   "type": "text"     },
+          { "name": "LastName",   "label": "Last Name* field",    "type": "text"     },
+          { "name": "Department", "label": "Department* dropdown", "type": "text"    },
+          { "name": "Division",   "label": "Division* dropdown",   "type": "text"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_010",
+      "uiVariety": "real:provisioning-webex",
+      "description": "Webex Control Hub - Add new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Webex_CreateUser.mp4",
+      "targetUrl": "https://admin.webex.com/overview",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign in button, then click Users link, then click Add users button, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{UserEmail}\" in the Email address field, then click Next button, then click Next button, then click Add users button, then click Close button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "click Sign In button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign in button",
+          "click Users link",
+          "click Add users button",
+          "enter \"{FirstName}\" in the First name field",
+          "enter \"{LastName}\" in the Last name field",
+          "enter \"{UserEmail}\" in the Email address field",
+          "click Next button",
+          "click Next button",
+          "click Add users button",
+          "click Close button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",     "label": "Email Address field",  "type": "email"    },
+          { "name": "Password",  "label": "Password field",       "type": "password" },
+          { "name": "FirstName", "label": "First name field",     "type": "text"     },
+          { "name": "LastName",  "label": "Last name field",      "type": "text"     },
+          { "name": "UserEmail", "label": "Email address field",  "type": "email"    }
+        ]
+      }
+    },
+    {
+      "id": "eval_011",
+      "uiVariety": "real:provisioning-securelink",
+      "description": "SecureLink (Imprivata) - Create new user provisioning",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Imprivata_CreateUser.mp4",
+      "targetUrl": "https://sailpoint.securelinkcloud.net/ui/login",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "groundTruth": {
+        "navigationGoal": "enter \"{UserId}\" in the User ID field, then click Next button, then enter \"{Password}\" in the Password field, then click Next button, then click USER MANAGEMENT, then click Add New User button, then enter \"{NewUserId}\" in the User ID field, then click Name field, then enter \"{Name}\" in the Name field, then click Email field, then enter \"{Email}\" in the Email field, then click Domain Name dropdown, then click imprivata.com option, then check the \"User Group\" checkbox to select all user groups, then check the \"HelpDesk Administrator\" checkbox, then click Create User button this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{UserId}\" in the User ID field",
+          "click Next button",
+          "enter \"{Password}\" in the Password field",
+          "click Next button",
+          "click USER MANAGEMENT",
+          "click Add New User button",
+          "enter \"{NewUserId}\" in the User ID field",
+          "click Name field",
+          "enter \"{Name}\" in the Name field",
+          "click Email field",
+          "enter \"{Email}\" in the Email field",
+          "click Domain Name dropdown",
+          "click imprivata.com option",
+          "check the \"User Group\" checkbox to select all user groups",
+          "check the \"HelpDesk Administrator\" checkbox",
+          "click Create User button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "UserId",    "label": "User ID field (login)", "type": "username" },
+          { "name": "Password",  "label": "Password field",        "type": "password" },
+          { "name": "NewUserId", "label": "User ID field",         "type": "text"     },
+          { "name": "Name",      "label": "Name field",            "type": "text"     },
+          { "name": "Email",     "label": "Email field",           "type": "text"     }
+        ]
+      }
+    },
+    {
+      "id": "eval_012",
+      "uiVariety": "real:aggregation-bamboohr",
+      "description": "BambooHR - Login and navigate to People list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/BambooHR_AggUsers.mp4",
+      "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click the Log In button, then click the Yes, Trust this Browser button, then click People in the left navigation menu this completes all steps — do not perform any further actions ",
+        "steps": [
+          "enter \"{Email}\" in the Email Address field",
+          "enter \"{Password}\" in the Password field",
+          "click the Log In button",
+          "click the Yes, Trust this Browser button",
+          "click People in the left navigation menu"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The People directory lists employees in a table. Navigate through result pages using the pagination controls at the bottom of the directory (page numbers with Previous/Next controls).",
+          "selectorHint": "a[rel='next'], .pagination a.next, button[aria-label='Next']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",      "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_013",
+      "uiVariety": "real:aggregation-webex",
+      "description": "Webex Control Hub - Login and navigate to Users list for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Webex_AggUsers.mp4",
+      "targetUrl": "https://admin.webex.com/overview",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to https://admin.webex.com/overview in the address bar, then enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Users in the left navigation menu this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to https://admin.webex.com/overview in the address bar",
+          "enter \"{Email}\" in the Email Address field",
+          "click Sign In button",
+          "enter \"{Password}\" in the Password field",
+          "click Sign In button",
+          "click Users in the left navigation menu"
+        ],
+        "paginationPattern": {
+          "type": "infinite_scroll",
+          "description": "The Users list in Webex Control Hub shows users in a paged table. Use the next/previous page controls at the bottom of the list to navigate between pages of users.",
+          "selectorHint": "button[aria-label='Next page'], button[aria-label='Go to next page'], .pagination a[rel='next']"
+        },
+        "tokens": [
+          { "name": "Email",    "label": "Email Address field", "type": "email"    },
+          { "name": "Password", "label": "Password field",      "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "eval_014",
+      "uiVariety": "real:aggregation-securelink",
+      "description": "SecureLink (Imprivata) - Login and navigate to User Management for aggregation",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Imprivata_AggUsers.mp4",
+      "targetUrl": "http://sailpoint.securelinkcloud.net/ui/user/list",
+      "mode": "PLACEHOLDER",
+      "taskType": "AGGREGATION",
+      "groundTruth": {
+        "navigationGoal": "navigate to \"http://sailpoint.securelinkcloud.net/ui/user/list\" in the address bar, then enter \"{UserId}\" in the User ID field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Next button, then click the USER MANAGEMENT icon in the left sidebar this completes all steps — do not perform any further actions ",
+        "steps": [
+          "navigate to \"http://sailpoint.securelinkcloud.net/ui/user/list\" in the address bar",
+          "enter \"{UserId}\" in the User ID field",
+          "click the Next button",
+          "enter \"{Password}\" in the Password field",
+          "click the Next button",
+          "click the USER MANAGEMENT icon in the left sidebar"
+        ],
+        "paginationPattern": {
+          "type": "next_button",
+          "description": "The User Management list displays users in a table. Navigate through pages of results using the pagination controls (page size selector and next/previous page buttons) at the bottom of the table.",
+          "selectorHint": "button[aria-label='Next page'], .pagination a[rel='next'], a.next"
+        },
+        "tokens": [
+          { "name": "UserId",   "label": "User ID field (login)", "type": "username" },
+          { "name": "Password", "label": "Password field",        "type": "password" }
+        ]
+      }
+    }
+  ]
+}

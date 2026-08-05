@@ -16,6 +16,12 @@ import java.util.Set;
  */
 public final class FrameSelector {
 
+    /**
+     * Below this final score a gap candidate is treated as "blank" for coverage purposes, so the
+     * midpoint frame is chosen for even spacing instead of an arbitrary tie-broken top scorer.
+     */
+    private static final double COVERAGE_MEANINGFUL_SCORE = 0.05;
+
     private final VideoConfig config;
     private final GridDiffCalculator diffCalculator;
 
@@ -88,9 +94,15 @@ public final class FrameSelector {
         }
 
         selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
+        // Dedup the score-picked frames FIRST, then rebuild the index set so coverage can refill
+        // any gap that dedup opened up. Coverage runs AFTER dedup so its evenly-spaced filler
+        // frames — which are often near-identical on idle/slow-typing screens — are never removed
+        // as "duplicates" (the very coarseness that hides typing from the diff also makes those
+        // frames look identical to the fingerprint).
+        deduplicate(selected);
+        rebuildIndices(selected, selectedIndices);
         enforceCoverage(candidates, selected, selectedIndices, allowance);
         selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
-        deduplicate(selected);
         applyLastFrameRules(candidates, selected, selectedIndices);
 
         selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
@@ -120,46 +132,102 @@ public final class FrameSelector {
         return false;
     }
 
+    /** Rebuilds {@code selectedIndices} from the surviving {@code selected} frames. */
+    private void rebuildIndices(List<ScoredFrame> selected, Set<Integer> selectedIndices) {
+        selectedIndices.clear();
+        for (ScoredFrame f : selected) {
+            selectedIndices.add(f.frameIndex());
+        }
+    }
+
+    /**
+     * Guarantees uniform temporal coverage. Any gap larger than the coverage threshold gets a
+     * frame inserted, and — crucially — the segment AFTER the last selected frame is bounded by
+     * the end of the video, so the trailing region (where slow, low-visual-delta activity such as
+     * typing into a field commonly lives) is covered too. The threshold is the tighter of the
+     * score-based max-gap net and the uniform coverage interval, so coverage is dense enough to
+     * catch typing that the grid diff scores as ~0.
+     */
     private void enforceCoverage(
             List<ScoredFrame> candidates,
             List<ScoredFrame> selected,
             Set<Integer> selectedIndices,
             int allowance) {
-        if (selected.size() < 2) {
+        if (candidates.isEmpty() || selected.isEmpty()) {
             return;
         }
         double maxGap = config.selectionMaxGapSeconds();
+        double interval = config.selectionCoverageIntervalSeconds();
+        double threshold;
+        if (interval > 0 && maxGap > 0) {
+            threshold = Math.min(interval, maxGap);
+        } else if (interval > 0) {
+            threshold = interval;
+        } else {
+            threshold = maxGap;
+        }
+        if (threshold <= 0) {
+            return;
+        }
+
+        double videoEnd = candidates.get(candidates.size() - 1).frameTime();
+
         boolean added = true;
         while (added && selected.size() < allowance) {
             added = false;
             selected.sort(Comparator.comparingDouble(ScoredFrame::frameTime));
-            for (int i = 0; i < selected.size() - 1; i++) {
-                double gap = selected.get(i + 1).frameTime() - selected.get(i).frameTime();
-                if (gap <= maxGap) {
+            int n = selected.size();
+            for (int i = 0; i < n; i++) {
+                double t0 = selected.get(i).frameTime();
+                double t1 = (i + 1 < n) ? selected.get(i + 1).frameTime() : videoEnd;
+                if (t1 - t0 <= threshold) {
                     continue;
                 }
-                double t0 = selected.get(i).frameTime();
-                double t1 = selected.get(i + 1).frameTime();
-                ScoredFrame best = null;
-                for (ScoredFrame c : candidates) {
-                    if (c.frameTime() <= t0 || c.frameTime() >= t1) {
-                        continue;
-                    }
-                    if (selectedIndices.contains(c.frameIndex())) {
-                        continue;
-                    }
-                    if (best == null || c.finalScore() > best.finalScore()) {
-                        best = c;
-                    }
-                }
-                if (best != null) {
-                    selectedIndices.add(best.frameIndex());
-                    selected.add(best);
+                ScoredFrame pick = pickCoverageFrame(candidates, selectedIndices, t0, t1);
+                if (pick != null) {
+                    selectedIndices.add(pick.frameIndex());
+                    selected.add(pick);
                     added = true;
+                    break; // list changed; restart the scan
                 }
             }
-            selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
         }
+        selected.sort(Comparator.comparingInt(ScoredFrame::frameIndex));
+    }
+
+    /**
+     * Picks the frame to insert into a temporal gap {@code (t0, t1)}. Prefers the highest-scoring
+     * candidate when the gap actually contains visible activity; when every candidate in the gap
+     * is effectively blank (score below {@link #COVERAGE_MEANINGFUL_SCORE}), falls back to the
+     * candidate nearest the gap midpoint so repeated insertions produce even spacing rather than
+     * clustering against one edge.
+     */
+    private ScoredFrame pickCoverageFrame(
+            List<ScoredFrame> candidates, Set<Integer> selectedIndices, double t0, double t1) {
+        ScoredFrame bestScore = null;
+        ScoredFrame nearestMid = null;
+        double mid = (t0 + t1) / 2.0;
+        double bestMidDist = Double.MAX_VALUE;
+        for (ScoredFrame c : candidates) {
+            if (c.frameTime() <= t0 || c.frameTime() >= t1) {
+                continue;
+            }
+            if (selectedIndices.contains(c.frameIndex())) {
+                continue;
+            }
+            if (bestScore == null || c.finalScore() > bestScore.finalScore()) {
+                bestScore = c;
+            }
+            double d = Math.abs(c.frameTime() - mid);
+            if (d < bestMidDist) {
+                bestMidDist = d;
+                nearestMid = c;
+            }
+        }
+        if (bestScore == null) {
+            return null;
+        }
+        return bestScore.finalScore() >= COVERAGE_MEANINGFUL_SCORE ? bestScore : nearestMid;
     }
 
     /**

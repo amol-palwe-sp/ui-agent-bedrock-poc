@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Modal blocks target — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .backdrop{position:fixed;inset:0;background:rgba(15,25,50,.55);display:flex;align-items:center;justify-content:center;z-index:100}
+    .promo{background:#fff;border-radius:12px;padding:28px;max-width:440px;text-align:center}
+    .promo h3{margin-top:0}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Modal blocking target</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Overlay over the goal element <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">A promotional modal appears on load and intercepts all clicks. The target form is visible
+      behind it but not clickable — this exercises the blocker walk-up that reports which element is intercepting.</p>
+    <form onsubmit="done(event)">
+      <label for="acct">Account name</label>
+      <input type="text" id="acct" aria-label="Account name" />
+      <div style="margin-top:18px;"><button type="submit">Create account</button></div>
+    </form>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Account created.</div>
+  </div></main>
+
+  <div class="backdrop" id="promo" role="dialog" aria-label="Promotional offer">
+    <div class="promo">
+      <h3>Limited time offer</h3>
+      <p>Upgrade to Premium and save 40% this month.</p>
+      <button onclick="document.getElementById('promo').remove()" aria-label="Close offer">No thanks, continue</button>
+    </div>
+  </div>
+
+  <script>function done(e){e.preventDefault();document.getElementById('ok').style.display='block';}</script>
+</body>
+</html>

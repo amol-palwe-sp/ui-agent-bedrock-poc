@@ -1,6 +1,7 @@
 package com.sailpoint.poc.uiagent.eval.report;
 
 import com.sailpoint.poc.uiagent.TokenUsage;
+import com.sailpoint.poc.uiagent.eval.benchmark.EvalMetrics;
 import com.sailpoint.poc.uiagent.eval.benchmark.EvalResult;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -11,9 +12,11 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Consumer;
 
 /**
@@ -67,15 +70,37 @@ public final class EvalReport {
         log.accept(String.format("Run at         : %s", runAt));
         log.accept(String.format("Model          : %s", modelId));
         log.accept(String.format("Cases run      : %d", results.size()));
-        log.accept(String.format("Passed (>=0.70): %d", passed));
-        log.accept(String.format("Failed (< 0.70): %d", failed));
+        log.accept(String.format("Passed         : %d", passed));
+        log.accept(String.format("Failed         : %d", failed));
         log.accept(String.format("Pass rate      : %.1f%%", passRate));
+
+        // A case passes only by clearing all three conditions, so report each one's
+        // tally separately — "12 failed" is not actionable, "12 failed the safety gate" is.
+        log.accept("");
+        log.accept("Pass conditions (a case must clear all three):");
+        log.accept(String.format("  1. Credentials tokenized : %d/%d",
+                results.stream().filter(EvalResult::safetyGatePassed).count(), results.size()));
+        log.accept(String.format("  2. Counted facts at bar  : %d/%d   (recall>=%.2f precision>=%.2f order>=%.2f)",
+                results.stream().filter(EvalResult::countedFactsPassed).count(), results.size(),
+                EvalMetrics.MIN_STEP_RECALL, EvalMetrics.MIN_STEP_PRECISION, EvalMetrics.MIN_STEP_ORDER));
+        long judged = results.stream().filter(EvalResult::judgeApplicable).count();
+        log.accept(judged == 0
+                ? "  3. AI judge              : not run"
+                : String.format("  3. AI judge at bar       : %d/%d   (overall>=%.1f/10)",
+                        results.stream().filter(r -> r.judgeApplicable() && r.graderPassed()).count(),
+                        judged, EvalMetrics.MIN_JUDGE_OVERALL));
+
+        // How many cases actually had credentials to tokenize. Without this, a 100% safety-gate
+        // figure looks reassuring even when no case ever exercised the gate.
+        long gateExercised = results.stream().filter(EvalResult::placeholderApplicable).count();
+        log.accept(String.format("     Cases that exercised the credential gate: %d/%d",
+                gateExercised, results.size()));
 
         log.accept("");
         log.accept("Per-Case Results:");
         log.accept(SEP_MED);
-        log.accept(String.format("%-10s %-24s %-4s %-4s %-6s %-6s %s",
-                "ID", "Description", "T", "M", "Score", "Judge", "Result"));
+        log.accept(String.format("%-10s %-24s %-4s %-4s %-6s %-6s %-6s %s",
+                "ID", "Description", "T", "M", "Trend", "Judge", "Result", "Why"));
         log.accept(SEP_MED);
 
         for (EvalResult r : results) {
@@ -85,16 +110,18 @@ public final class EvalReport {
             String tAbbr = "AGGREGATION".equalsIgnoreCase(r.taskType()) ? "AGG" : "PRO";
             String mAbbr = "PLACEHOLDER".equalsIgnoreCase(r.mode()) ? "PH" : "LI";
             String result = r.passed() ? "PASS" : "FAIL";
-            log.accept(String.format("%-10s %-24s %-4s %-4s %-6s %-6s %s",
+            log.accept(String.format("%-10s %-24s %-4s %-4s %-6s %-6s %-6s %s",
                     r.caseId(), desc, tAbbr, mAbbr,
                     String.format("%.3f", r.overallScore()),
-                    String.format("%.1f", r.judgeOverallScore()),
-                    result));
+                    r.judgeApplicable() ? String.format("%.1f", r.judgeOverallScore()) : "N/A",
+                    result,
+                    r.failureReason()));
         }
 
         log.accept("");
         log.accept("T = taskType (AGG=AGGREGATION  PRO=PROVISIONING)");
         log.accept("M = mode     (PH=PLACEHOLDER   LI=LITERAL)");
+        log.accept("Trend = composite movement indicator, not the pass rule.");
 
         // ── Metric averages ────────────────────────────────────────────────────
         if (!results.isEmpty()) {
@@ -103,10 +130,44 @@ public final class EvalReport {
             log.accept(String.format("  Step Recall       : %.3f", avg(results, r -> r.stepRecall())));
             log.accept(String.format("  Step Precision    : %.3f", avg(results, r -> r.stepPrecision())));
             log.accept(String.format("  Step Order        : %.3f", avg(results, r -> r.stepOrderScore())));
+            // Averaged over applicable cases only; folding in cases the check skipped would
+            // report a low number that says nothing about accuracy.
+            log.accept(String.format("  Placeholder       : %s  (%d applicable)",
+                    fmt(avgApplicable(results, EvalResult::placeholderApplicable, EvalResult::placeholderScore)),
+                    results.stream().filter(EvalResult::placeholderApplicable).count()));
+            log.accept(String.format("  Pagination        : %s  (%d applicable)",
+                    fmt(avgApplicable(results, EvalResult::paginationApplicable, EvalResult::paginationScore)),
+                    results.stream().filter(EvalResult::paginationApplicable).count()));
+            log.accept(String.format("  Trend composite   : %.3f", avg(results, r -> r.overallScore())));
+            log.accept(String.format("  AI judge overall  : %s  (%d judged)",
+                    fmtJudge(avgApplicable(results, EvalResult::judgeApplicable, EvalResult::judgeOverallScore)),
+                    results.stream().filter(EvalResult::judgeApplicable).count()));
+
+            log.accept("");
+            log.accept("Diagnostics (not scored, for investigation only):");
             log.accept(String.format("  Label Accuracy    : %.3f", avg(results, r -> r.labelAccuracyScore())));
-            log.accept(String.format("  Placeholder       : %.3f", avg(results, r -> r.placeholderScore())));
-            log.accept(String.format("  Pagination        : %.3f", avg(results, r -> r.paginationScore())));
-            log.accept(String.format("  Overall           : %.3f", avg(results, r -> r.overallScore())));
+        }
+
+        // ── Results by UI variety ──────────────────────────────────────────────
+        Map<String, List<EvalResult>> byVariety = groupByVariety(results);
+        if (!byVariety.isEmpty()) {
+            log.accept("");
+            log.accept("Results by UI variety:");
+            log.accept(SEP_MED);
+            log.accept(String.format("%-28s %-7s %-8s %-8s %s",
+                    "UI variety", "Cases", "Pass", "Trend", "Judge"));
+            log.accept(SEP_MED);
+            for (Map.Entry<String, List<EvalResult>> e : byVariety.entrySet()) {
+                List<EvalResult> group = e.getValue();
+                long groupPassed = group.stream().filter(EvalResult::passed).count();
+                log.accept(String.format("%-28s %-7d %-8s %-8s %s",
+                        truncate(e.getKey(), 28),
+                        group.size(),
+                        groupPassed + "/" + group.size(),
+                        String.format("%.3f", avg(group, EvalResult::overallScore)),
+                        fmtJudge(avgApplicable(group, EvalResult::judgeApplicable,
+                                EvalResult::judgeOverallScore))));
+            }
         }
 
         // ── Failure type summary ───────────────────────────────────────────────
@@ -165,20 +226,63 @@ public final class EvalReport {
         root.put("failed",     failed);
         root.put("passRate",   passRate);
 
+        JSONObject conditions = new JSONObject();
+        conditions.put("safetyGatePassed",
+                results.stream().filter(EvalResult::safetyGatePassed).count());
+        conditions.put("countedFactsPassed",
+                results.stream().filter(EvalResult::countedFactsPassed).count());
+        conditions.put("graderPassed",
+                results.stream().filter(r -> r.judgeApplicable() && r.graderPassed()).count());
+        conditions.put("casesJudged",
+                results.stream().filter(EvalResult::judgeApplicable).count());
+        conditions.put("credentialGateExercised",
+                results.stream().filter(EvalResult::placeholderApplicable).count());
+        root.put("passConditions", conditions);
+
+        JSONObject thresholds = new JSONObject();
+        thresholds.put("minStepRecall",    EvalMetrics.MIN_STEP_RECALL);
+        thresholds.put("minStepPrecision", EvalMetrics.MIN_STEP_PRECISION);
+        thresholds.put("minStepOrder",     EvalMetrics.MIN_STEP_ORDER);
+        thresholds.put("minJudgeOverall",  EvalMetrics.MIN_JUDGE_OVERALL);
+        root.put("thresholds", thresholds);
+
         JSONObject avgScores = new JSONObject();
-        avgScores.put("stepRecall",       avg(results, r -> r.stepRecall()));
-        avgScores.put("stepPrecision",    avg(results, r -> r.stepPrecision()));
-        avgScores.put("stepOrderScore",   avg(results, r -> r.stepOrderScore()));
-        avgScores.put("labelAccuracy",    avg(results, r -> r.labelAccuracyScore()));
-        avgScores.put("placeholderScore", avg(results, r -> r.placeholderScore()));
-        avgScores.put("paginationScore",  avg(results, r -> r.paginationScore()));
-        avgScores.put("overallScore",     avg(results, r -> r.overallScore()));
+        avgScores.put("stepRecall",     avg(results, r -> r.stepRecall()));
+        avgScores.put("stepPrecision",  avg(results, r -> r.stepPrecision()));
+        avgScores.put("stepOrderScore", avg(results, r -> r.stepOrderScore()));
+        // Averaged over applicable cases only, null when nothing exercised the check.
+        avgScores.put("placeholderScore", jsonOrNull(
+                avgApplicable(results, EvalResult::placeholderApplicable, EvalResult::placeholderScore)));
+        avgScores.put("paginationScore", jsonOrNull(
+                avgApplicable(results, EvalResult::paginationApplicable, EvalResult::paginationScore)));
+        avgScores.put("judgeOverall", jsonOrNull(
+                avgApplicable(results, EvalResult::judgeApplicable, EvalResult::judgeOverallScore)));
+        avgScores.put("overallScore",   avg(results, r -> r.overallScore()));
         root.put("averageScores", avgScores);
+
+        JSONObject avgDiagnostics = new JSONObject();
+        avgDiagnostics.put("labelAccuracy", avg(results, r -> r.labelAccuracyScore()));
+        root.put("averageDiagnostics", avgDiagnostics);
 
         Map<String, Long> failureTypes = countFailureTypes(results);
         JSONObject failureJson = new JSONObject();
         failureTypes.forEach(failureJson::put);
         root.put("failureTypes", failureJson);
+
+        JSONObject varietyJson = new JSONObject();
+        for (Map.Entry<String, List<EvalResult>> e : groupByVariety(results).entrySet()) {
+            List<EvalResult> group = e.getValue();
+            long groupPassed = group.stream().filter(EvalResult::passed).count();
+            JSONObject v = new JSONObject();
+            v.put("cases",        group.size());
+            v.put("passed",       groupPassed);
+            v.put("passRate",     group.isEmpty() ? 0.0 : (double) groupPassed / group.size());
+            v.put("overallScore", avg(group, EvalResult::overallScore));
+            v.put("judgeOverall", jsonOrNull(
+                    avgApplicable(group, EvalResult::judgeApplicable, EvalResult::judgeOverallScore)));
+            varietyJson.put(e.getKey(), v);
+        }
+        root.put("byUiVariety", varietyJson);
 
         JSONArray casesArr = new JSONArray();
         results.forEach(r -> casesArr.put(r.toJson()));
@@ -208,6 +312,45 @@ public final class EvalReport {
         return results.stream().mapToDouble(fn::get).average().orElse(0.0);
     }
 
+    /**
+     * Averages a metric across only the cases it applied to.
+     *
+     * @return {@code null} when no case exercised the check, which callers render as "N/A"
+     *         rather than inventing a number
+     */
+    private static Double avgApplicable(List<EvalResult> results,
+                                        java.util.function.Predicate<EvalResult> applies,
+                                        MetricExtractor fn) {
+        List<EvalResult> subset = results.stream().filter(applies).toList();
+        return subset.isEmpty() ? null : avg(subset, fn);
+    }
+
+    private static String fmt(Double v) {
+        return v == null ? "N/A  " : String.format("%.3f", v);
+    }
+
+    private static String fmtJudge(Double v) {
+        return v == null ? "N/A" : String.format("%.1f", v);
+    }
+
+    private static Object jsonOrNull(Double v) {
+        return v == null ? JSONObject.NULL : v;
+    }
+
+    /** Groups results by their UI-variety tag, sorted alphabetically for stable output. */
+    private static Map<String, List<EvalResult>> groupByVariety(List<EvalResult> results) {
+        Map<String, List<EvalResult>> grouped = new TreeMap<>();
+        for (EvalResult r : results) {
+            grouped.computeIfAbsent(r.uiVariety(), k -> new ArrayList<>()).add(r);
+        }
+        return grouped;
+    }
+
+    private static String truncate(String s, int max) {
+        if (s == null) return "";
+        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
+    }
+
     private static Map<String, Long> countFailureTypes(List<EvalResult> results) {
         Map<String, Long> counts = new HashMap<>();
         for (EvalResult r : results) {
@@ -216,10 +359,10 @@ public final class EvalReport {
             if (!r.hallucinatedSteps().isEmpty())
                 counts.merge("Hallucinated steps", (long) r.hallucinatedSteps().size(), Long::sum);
             if (r.labelAccuracyScore() < 0.7)
-                counts.merge("Wrong element labels", 1L, Long::sum);
-            if (!r.credentialLeaks().isEmpty())
-                counts.merge("Credential leaks", 1L, Long::sum);
-            if (r.paginationScore() < 0.5 && "AGGREGATION".equalsIgnoreCase(r.taskType()))
+                counts.merge("Low label similarity (diagnostic)", 1L, Long::sum);
+            if (!r.missingPlaceholders().isEmpty())
+                counts.merge("Missing placeholders", 1L, Long::sum);
+            if (r.paginationApplicable() && r.paginationScore() < 0.5)
                 counts.merge("Wrong pagination type", 1L, Long::sum);
         }
         return counts;

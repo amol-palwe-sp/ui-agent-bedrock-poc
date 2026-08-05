@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Low contrast &amp; tiny text — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* Deliberately degraded visuals: 9px text at very low contrast on a noisy
+       background. This is the HTML proxy for "low-quality / compressed recording" —
+       it degrades what the vision model can read, without needing a video fixture. */
+    .degraded{background-image:
+        repeating-linear-gradient(45deg,#f4f5f7,#f4f5f7 3px,#eff1f4 3px,#eff1f4 6px);
+      padding:18px;border-radius:8px}
+    .degraded label{color:#b9bec7;font-size:9px;font-weight:400}
+    .degraded input,.degraded select{font-size:9px;padding:4px 6px;color:#a8adb6;border-color:#e8eaee}
+    .degraded button{font-size:9px;padding:5px 10px;background:#c3cddf;color:#eef1f6}
+    .degraded .hintline{color:#c9ced6;font-size:9px}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Low contrast &amp; tiny text</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Vision-degradation proxy:</strong> this stands in for the
+      "low-quality / compressed recording" case. Text is 9px at very low contrast over a patterned
+      background, so the screenshot is hard to read even though the DOM is perfectly clean.
+      A structure-first agent should still succeed; a vision-only one should struggle.</div>
+    <h2>Hard-to-read form <span class="pill warn">Ladder</span></h2>
+    <div class="degraded">
+      <p class="hintline">Complete all fields to register the service account.</p>
+      <label for="svc">Service name</label>
+      <input type="text" id="svc" aria-label="Service name" />
+      <label for="env">Environment</label>
+      <select id="env" aria-label="Environment"><option>Choose…</option><option>Production</option><option>Staging</option></select>
+      <label for="ownr">Owner email</label>
+      <input type="email" id="ownr" aria-label="Owner email" />
+      <div style="margin-top:14px;"><button onclick="document.getElementById('ok').style.display='block'">Register service</button></div>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Service registered.</div>
+  </div></main>
+</body>
+</html>

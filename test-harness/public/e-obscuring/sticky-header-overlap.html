@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sticky header overlap — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* Tall sticky header. scrollIntoView will place the target underneath it. */
+    .sticky{position:sticky;top:0;z-index:50;background:var(--brand);color:#fff;padding:26px 24px;
+      box-shadow:0 3px 10px rgba(20,30,60,.2)}
+    .sticky h2{margin:0;font-size:18px}
+    .filler{height:900px;background:repeating-linear-gradient(180deg,#fff,#fff 40px,#f2f5fb 40px,#f2f5fb 80px);
+      border:1px solid var(--line);border-radius:8px;padding:16px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <div class="sticky">
+    <h2>Sticky toolbar — always covers the top 90px of the viewport</h2>
+  </div>
+  <main><div class="card">
+    <h2>Scroll target hidden under sticky bar <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">The target field sits far down the page. When scrolled into view it lands underneath the
+      sticky toolbar, so a naive click hits the toolbar instead. The agent must scroll further or handle the offset.</p>
+    <div class="filler">Scroll down — the target field is below this block.</div>
+    <label for="code" style="margin-top:24px;">Approval code</label>
+    <input type="text" id="code" aria-label="Approval code" />
+    <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Approve</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Approved.</div>
+    <div style="height:200px"></div>
+  </div></main>
+</body>
+</html>

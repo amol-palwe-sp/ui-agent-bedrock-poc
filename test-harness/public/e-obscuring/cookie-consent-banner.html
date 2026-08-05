@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cookie consent — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* Full-width banner pinned to the bottom, covering the submit button. */
+    .consent{position:fixed;left:0;right:0;bottom:0;background:#1b2333;color:#fff;padding:20px 24px;z-index:100;
+      display:flex;gap:16px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+    .consent p{margin:0;font-size:14px;max-width:640px}
+    .consent .actions{display:flex;gap:10px}
+    .consent button{padding:10px 20px}
+    body{padding-bottom:140px}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Cookie consent banner</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Blocked first interaction <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">A consent banner covers the form's submit button. The agent must dismiss the banner
+      before it can complete the task — the classic first-interaction blocker in real applications.</p>
+    <form onsubmit="done(event)">
+      <label for="name">Full name</label>
+      <input type="text" id="name" aria-label="Full name" />
+      <label for="email">Email</label>
+      <input type="email" id="email" aria-label="Email" />
+      <div style="margin-top:18px;"><button type="submit" id="submitBtn">Submit application</button></div>
+    </form>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Application submitted.</div>
+  </div></main>
+
+  <div class="consent" id="consent" role="dialog" aria-label="Cookie consent">
+    <p>We use cookies to improve your experience. By continuing you agree to our use of cookies.</p>
+    <div class="actions">
+      <button onclick="accept()" aria-label="Accept all cookies">Accept all</button>
+      <button class="secondary" onclick="accept()" aria-label="Reject non-essential cookies">Reject non-essential</button>
+    </div>
+  </div>
+
+  <script>
+    function accept(){ document.getElementById('consent').remove(); document.body.style.paddingBottom='0'; }
+    function done(e){ e.preventDefault(); document.getElementById('ok').style.display='block'; }
+  </script>
+</body>
+</html>

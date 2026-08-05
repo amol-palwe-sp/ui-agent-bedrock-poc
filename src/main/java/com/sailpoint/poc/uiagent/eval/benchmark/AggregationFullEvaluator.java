@@ -288,17 +288,21 @@ public final class AggregationFullEvaluator {
 
         // Script-gen metrics against ground truth
         EvalCase.GroundTruth gt       = system.groundTruth();
-        List<String>         gtSteps  = gt.steps();
         List<String>         genSteps = derived.steps().stream()
                 .filter(s -> !s.toLowerCase().contains("do not perform any further actions"))
                 .collect(Collectors.toList());
+
+        // Normalize both sides so a focus-click before typing (a UI artifact, not a distinct
+        // action) does not count against precision. Applied symmetrically to keep matching fair.
+        List<String>         gtSteps  = EvalMetrics.collapseFocusClicks(gt.steps());
+        genSteps                      = EvalMetrics.collapseFocusClicks(genSteps);
 
         double stepRecall     = EvalMetrics.computeStepRecall(gtSteps, genSteps);
         double stepPrecision  = EvalMetrics.computeStepPrecision(gtSteps, genSteps);
         double stepOrderScore = EvalMetrics.computeStepOrderScore(gtSteps, genSteps);
         double labelAccuracy  = EvalMetrics.computeLabelAccuracy(gtSteps, genSteps);
         double placeholderScore = EvalMetrics.computePlaceholderScore(
-                derived.navigationGoal(), "AGGREGATION", "PLACEHOLDER", null);
+                derived.navigationGoal(), genSteps, "PLACEHOLDER", gt.tokens(), null);
         double paginationScore = EvalMetrics.computePaginationScore(
                 gt.paginationPattern(),
                 derived.paginationPattern() != null

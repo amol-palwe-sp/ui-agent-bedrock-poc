@@ -102,6 +102,39 @@ app.get('/api/accounts/cursor', (req, res) => {
   res.json({ rows, nextCursor, total: ACCOUNTS.length });
 });
 
+// --- Tier G: failure & recovery endpoints ------------------------------------
+// These exist so the agent meets genuine dead ends and must TERMINATE rather
+// than loop — looping is what burns tokens in production.
+
+app.get('/api/error/500', (_req, res) => {
+  res.status(500).send('<h1>500 — Internal Server Error</h1><p>The service is temporarily unavailable.</p>');
+});
+
+app.get('/api/error/429', (_req, res) => {
+  res.status(429).set('Retry-After', '120')
+     .send('<h1>429 — Too Many Requests</h1><p>Rate limit exceeded. Retry after 120 seconds.</p>');
+});
+
+// Short-lived session used only by the session-timeout scenario. The cookie is
+// issued with a few seconds of life so a multi-step flow expires mid-way.
+const TIMEOUT_COOKIE = 'th_shortsession';
+const TIMEOUT_TTL_SECONDS = 12;
+
+app.post('/timeout-login', (_req, res) => {
+  res.setHeader('Set-Cookie',
+    `${TIMEOUT_COOKIE}=active; Path=/; Max-Age=${TIMEOUT_TTL_SECONDS}; SameSite=Lax`);
+  res.redirect(302, '/g-failure/session-timeout-step2.html');
+});
+
+// Steps 2+ of the timeout flow are gated; once the short cookie lapses the
+// agent is bounced back to a re-authentication page mid-flow.
+app.get('/g-failure/session-timeout-step:step.html', (req, res, next) => {
+  if (req.params.step === '2' && req.cookies[TIMEOUT_COOKIE] !== 'active') {
+    return res.redirect(302, '/g-failure/session-expired.html');
+  }
+  return next();
+});
+
 // --- static ------------------------------------------------------------------
 app.use(express.static(PUBLIC, { extensions: ['html'] }));
 

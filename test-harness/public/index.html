@@ -16,7 +16,8 @@
       <p>
         <span class="pill ok">Pass</span> native code path &nbsp;
         <span class="pill warn">Ladder</span> works via generic CLICK/TYPE &nbsp;
-        <span class="pill gap">Roadmap gap</span> no dedicated support (expected-fail)
+        <span class="pill gap">Roadmap gap</span> no dedicated support (expected-fail) &nbsp;
+        <span class="pill stop">Expect TERMINATE</span> dead end — stopping cleanly is the correct result
       </p>
       <p class="subtitle">Login fixtures: <code>test.user@demo.local</code> / <code>Demo!Pass123</code>.
         Replace <code>BASE</code> below with <code>http://localhost:4599</code> in your <code>--url</code>.</p>
@@ -26,8 +27,8 @@
 
   <script>
   const B = 'http://localhost:4599';
-  const V = { ok: 'ok', ladder: 'warn', gap: 'gap' };
-  const VL = { ok: 'Pass', ladder: 'Ladder', gap: 'Roadmap gap' };
+  const V = { ok: 'ok', ladder: 'warn', gap: 'gap', terminate: 'stop' };
+  const VL = { ok: 'Pass', ladder: 'Ladder', gap: 'Roadmap gap', terminate: 'Expect TERMINATE' };
 
   const SCENARIOS = [
     { tier: 'A — Discovery & structure', items: [
@@ -86,6 +87,42 @@
       { name: 'url-param-pagination', path: '/d-aggregation/url-param-pagination.html', v: 'ladder', mech: '?page=N via GOTO', goal: 'scrape all accounts across pages' },
       { name: 'page-size-selector', path: '/d-aggregation/page-size-selector.html', v: 'ladder', mech: 'Page-size selector + pagination', goal: 'set page size to 100, then scrape all accounts across pages' },
       { name: 'merged-headers', path: '/d-aggregation/merged-headers.html', v: 'ladder', mech: 'Grouped/merged column headers', goal: 'scrape all accounts across all pages' },
+    ]},
+    { tier: 'E — Obscuring & blocking (P0)', items: [
+      { name: 'cookie-consent-banner', path: '/e-obscuring/cookie-consent-banner.html', v: 'ladder', mech: 'Consent banner covers the submit button', goal: 'accept the cookie banner, then enter "Ada Lovelace" in Full name, then enter "ada@demo.local" in Email, then click Submit application' },
+      { name: 'modal-blocks-target', path: '/e-obscuring/modal-blocks-target.html', v: 'ladder', mech: 'Promo modal intercepts all clicks', goal: 'dismiss the promotional offer, then enter "Acme Ltd" in Account name, then click Create account' },
+      { name: 'sticky-header-overlap', path: '/e-obscuring/sticky-header-overlap.html', v: 'ladder', mech: 'Sticky toolbar covers the scroll target', goal: 'scroll down to the Approval code field, then enter "AC-9931", then click Approve' },
+      { name: 'toast-autodismiss', path: '/e-obscuring/toast-autodismiss.html', v: 'ladder', mech: 'Timed toast covers Confirm for 5s', goal: 'enter "quarterly review" in the Note field, then click Save, then click Confirm' },
+      { name: 'layout-shift-click', path: '/e-obscuring/layout-shift-click.html', v: 'ladder', mech: 'Injected banner shifts buttons after 2.5s', goal: 'enter "500" in the Amount field, then click Send transfer' },
+      { name: 'full-page-interstitial', path: '/e-obscuring/full-page-interstitial.html', v: 'ladder', mech: 'Whole-viewport overlay, small close control', goal: 'close the announcement, then enter "ada" in Search users, then click Search' },
+    ]},
+    { tier: 'F — Viewport & rendering (P1 / P2)', items: [
+      { name: 'responsive-reflow', path: '/f-viewport/responsive-reflow.html', v: 'ladder', mech: 'Layout collapses to burger menu below 900px', goal: 'enter "alovelace" in Username, then select "Admin" from Role, then click Save user' },
+      { name: 'zoom-125', path: '/f-viewport/zoom.html?level=125', v: 'ladder', mech: 'CSS scale 1.25 — emulated browser zoom', goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy' },
+      { name: 'zoom-150', path: '/f-viewport/zoom.html?level=150', v: 'ladder', mech: 'CSS scale 1.5', goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy' },
+      { name: 'zoom-200', path: '/f-viewport/zoom.html?level=200', v: 'ladder', mech: 'CSS scale 2.0 — heaviest coordinate shift', goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy' },
+      { name: 'dark-mode-prefers', path: '/f-viewport/dark-mode-prefers.html', v: 'ok', mech: 'prefers-color-scheme: dark', goal: 'enter "Platform team" in Group name, then select "Private" from Visibility, then click Create group' },
+      { name: 'light-dark-toggle', path: '/f-viewport/light-dark-toggle.html', v: 'ok', mech: 'Theme switches mid-flow', goal: 'click Dark theme, then enter "Q3 summary" in Report title, then click Generate report' },
+      { name: 'low-contrast-tiny-text', path: '/f-viewport/low-contrast-tiny-text.html', v: 'ladder', mech: '9px low-contrast text — vision degradation proxy', goal: 'enter "billing-svc" in Service name, then select "Production" from Environment, then enter "ada@demo.local" in Owner email, then click Register service' },
+      { name: 'rtl-layout', path: '/f-viewport/rtl-layout.html', v: 'ladder', mech: 'Arabic right-to-left, mirrored positions', goal: 'enter "Ada Lovelace" in the Full name field, then select the second option in Department, then click Save' },
+      { name: 'long-page-scroll', path: '/f-viewport/long-page-scroll.html', v: 'ladder', mech: '20 sections; target in the last one', goal: 'scroll down to Section 20, then enter "FIN-2026" in Final approval code, then click Submit approval' },
+    ]},
+    { tier: 'G — Failure & recovery', items: [
+      { name: 'infinite-spinner', path: '/g-failure/infinite-spinner.html', v: 'terminate', mech: 'Load never resolves; DOM mutates forever', goal: 'click Load data, then enter "test" in the account details field once it loads' },
+      { name: 'server-error-500', path: '/g-failure/server-error-500.html', v: 'terminate', mech: 'Submit navigates to HTTP 500', goal: 'enter "acme" in Tenant name, then click Provision tenant, then confirm the tenant was created' },
+      { name: 'rate-limit-429', path: '/g-failure/rate-limit-429.html', v: 'terminate', mech: 'HTTP 429 with Retry-After: 120', goal: 'enter "ada" in Search directory, then click Search, then read the first result' },
+      { name: 'session-timeout-midflow', path: '/g-failure/session-timeout-midflow.html', v: 'ladder', mech: 'Session expires after 12s, forces re-auth', goal: 'enter "Demo!Pass123" in the Password field, then click Sign in, then enter "Ada" in First name, then enter "Lovelace" in Last name, then select "Engineering" from Department, then click Continue to review' },
+      { name: 'validation-errors', path: '/g-failure/validation-errors.html', v: 'ladder', mech: 'First submit fails; must read errors and correct', goal: 'enter "ada@demo.local" in Work email, then enter "123" in Employee ID, then click Create employee, then correct any validation errors shown and submit again' },
+      { name: 'disabled-until-valid', path: '/g-failure/disabled-until-valid.html', v: 'ladder', mech: 'Submit disabled until all fields + terms', goal: 'enter "Apollo" in Project name, then enter "Ada" in Project owner, then enter "BUD-77" in Budget code, then accept the terms checkbox, then click Create project' },
+      { name: 'confirm-by-typing', path: '/g-failure/confirm-by-typing.html', v: 'ladder', mech: 'Exact literal string unlocks destructive action', goal: 'enter "DELETE acme-production" in the Confirmation phrase field, then click Delete workspace' },
+    ]},
+    { tier: 'H — Scale, structure & motion (P0 / P1)', items: [
+      { name: 'many-elements-200', path: '/h-scale/many-elements-200.html', v: 'ladder', mech: '200 buttons — element-list / token blowup', goal: 'click the Toggle feature 137 button' },
+      { name: 'nested-iframe', path: '/h-scale/nested-iframe.html', v: 'ladder', mech: 'iframe inside an iframe (2 levels)', goal: 'enter "4417" in the Security PIN field inside the nested frame, then click Verify PIN' },
+      { name: 'fast-autoscroll', path: '/h-scale/fast-autoscroll.html', v: 'ladder', mech: 'Viewport scrolls continuously (P0 motion)', goal: 'click Pause auto-scroll, then enter "DEST-12" in Destination code, then click Confirm destination' },
+      { name: 'auto-redirect-chain', path: '/h-scale/auto-redirect-chain.html', v: 'ladder', mech: '3 redirects in ~3s before the real form', goal: 'wait for the redirects to finish, then enter "s3-bucket" in Resource name, then enter "audit" in Justification, then click Request access' },
+      { name: 'multi-tab-workflow', path: '/h-scale/multi-tab-workflow.html', v: 'ladder', mech: 'Read a value in tab 2, return to tab 1', goal: 'click Open token generator, then click Generate token in the new tab, then return to the first tab and enter "TKN-4417-DEMO" in Access token, then enter "audit" in Purpose, then click Submit token' },
+      { name: 'midflow-resume', path: '/h-scale/midflow-resume.html', v: 'ladder', mech: 'Flow already at step 3 (recording-mid-process proxy)', goal: 'create the user account for ada@demo.local with profile Ada Lovelace in Engineering, then select "Administrator" as Access level, then enter "global" in Scope, then click Continue to review' },
     ]},
   ];
 

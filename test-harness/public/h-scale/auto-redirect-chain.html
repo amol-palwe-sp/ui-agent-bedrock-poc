@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auto-redirect chain — Scale</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Auto-redirect chain</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Fast navigation (P0):</strong> this page bounces through three interstitials in
+      ~3 seconds before landing on the real form — mimicking SSO/IdP hops. Any action planned against an
+      intermediate page is destroyed by the next navigation, so the agent must wait for the chain to settle.</div>
+    <h2>Redirecting… <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle" id="msg">Establishing secure session (hop 1 of 3)…</p>
+    <p class="status">You will be forwarded automatically.</p>
+  </div></main>
+  <script>
+    // Each hop is a real navigation so the browsing context is genuinely replaced.
+    const hop = parseInt(new URLSearchParams(location.search).get('hop'), 10) || 1;
+    document.getElementById('msg').textContent = `Establishing secure session (hop ${hop} of 3)…`;
+    setTimeout(() => {
+      if (hop < 3) location.href = `/h-scale/auto-redirect-chain.html?hop=${hop + 1}`;
+      else         location.href = '/h-scale/redirect-destination.html';
+    }, 1000);
+  </script>
+</body>
+</html>

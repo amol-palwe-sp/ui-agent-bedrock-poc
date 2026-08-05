@@ -106,11 +106,40 @@ public final class VideoAnalysisEvaluator {
             throw new IllegalArgumentException(msg);
         }
 
+        // Skip cases whose video is missing or empty — exclude them from the run and the
+        // report instead of failing. This lets the dataset be run before every video is recorded.
+        List<EvalCase> skipped  = new ArrayList<>();
+        List<EvalCase> runnable = new ArrayList<>();
+        for (EvalCase c : casesToRun) {
+            if (hasUsableVideo(c)) {
+                runnable.add(c);
+            } else {
+                skipped.add(c);
+                String vp = (c.videoPath() == null || c.videoPath().isBlank()) ? "<empty>" : c.videoPath();
+                log.accept("LOG:WARN:⏭ Skipping " + c.id() + " — video missing or empty: " + vp);
+            }
+        }
+        casesToRun = runnable;
+        if (!skipped.isEmpty()) {
+            log.accept("LOG:INFO:Skipped " + skipped.size() + " case(s) with missing/empty video paths");
+        }
+
+        List<EvalResult> results = new ArrayList<>();
+
+        if (casesToRun.isEmpty()) {
+            log.accept("LOG:WARN:No runnable cases — all " + skipped.size()
+                    + " matching case(s) had missing/empty video paths");
+            EvalReport.generate(results, config.bedrockModelId(), outputDir,
+                    line -> log.accept("LOG:INFO:" + line));
+            log.accept("LOG:SUCCESS:Done — 0 ran, " + skipped.size() + " skipped. Report saved to " + outputDir);
+            log.accept("DONE:0");
+            return;
+        }
+
         log.accept("LOG:INFO:Running " + casesToRun.size() + " case(s)"
                 + (skipJudge ? " [LLM judge skipped]" : ""));
         log.accept("PROGRESS:0:" + casesToRun.size() + ":Starting...");
 
-        List<EvalResult> results = new ArrayList<>();
         try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
                 config.bedrock().region(), config.bedrock().profile(),
                 config.bedrock().modelId(), config.bedrock().maxTokens(),
@@ -139,8 +168,26 @@ public final class VideoAnalysisEvaluator {
         EvalReport.generate(results, config.bedrockModelId(), outputDir,
                 line -> log.accept("LOG:INFO:" + line));
         long passed = results.stream().filter(EvalResult::passed).count();
-        log.accept("LOG:SUCCESS:Done — " + passed + "/" + results.size() + " passed. Report saved to " + outputDir);
+        log.accept("LOG:SUCCESS:Done — " + passed + "/" + results.size() + " passed"
+                + (skipped.isEmpty() ? "" : ", " + skipped.size() + " skipped")
+                + ". Report saved to " + outputDir);
         log.accept("DONE:0");
+    }
+
+    /**
+     * Returns true only when the case points at a real, non-empty video file on disk.
+     * Empty/blank paths and missing or zero-byte files are treated as "no video yet"
+     * so the case can be skipped rather than failed.
+     */
+    private static boolean hasUsableVideo(EvalCase c) {
+        String vp = c.videoPath();
+        if (vp == null || vp.isBlank()) return false;
+        try {
+            java.nio.file.Path p = Paths.get(vp);
+            return Files.exists(p) && Files.isRegularFile(p) && Files.size(p) > 0;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     // ── Per-case pipeline ─────────────────────────────────────────────────────
@@ -193,11 +240,13 @@ public final class VideoAnalysisEvaluator {
             String userPrompt = evalCase.targetUrl().isBlank()
                     ? VideoToGoalPrompt.USER_PROMPT
                     : VideoToGoalPrompt.userPromptWithUrl(evalCase.targetUrl());
+            // PLACEHOLDER mode → instruct the model to tokenize entered values as {Field} placeholders.
+            String systemPrompt = VideoToGoalPrompt.systemPrompt(evalCase.isPlaceholderMode());
 
             BedrockAnthropicClient.InvokeResult invokeResult;
             try {
                 invokeResult = bedrock.invokeWithMultipleImages(
-                        VideoToGoalPrompt.SYSTEM_PROMPT, userPrompt, frames);
+                        systemPrompt, userPrompt, frames);
             } catch (Exception e) {
                 issues.add("Claude call failed: " + e.getMessage());
                 log.accept("LOG:ERROR:  Claude call failed: " + e.getMessage());
@@ -270,7 +319,6 @@ public final class VideoAnalysisEvaluator {
 
         // Step 6: Compute automated metrics
         EvalCase.GroundTruth gt = evalCase.groundTruth();
-        List<String> gtSteps  = gt.steps();
 
         // Strip the system-appended halt clause — it is added by the prompt/UI and is never
         // part of the GT steps, so it would always be flagged as a hallucination if kept.
@@ -278,18 +326,31 @@ public final class VideoAnalysisEvaluator {
                 .filter(s -> !s.toLowerCase().contains("do not perform any further actions"))
                 .collect(java.util.stream.Collectors.toList());
 
-        List<String> credentialLeaks = new ArrayList<>();
+        // Normalize both sides so a focus-click before typing (a UI artifact, not a distinct
+        // action) does not count against precision. Applied symmetrically to keep matching fair.
+        List<String> gtSteps  = EvalMetrics.collapseFocusClicks(gt.steps());
+        genSteps              = EvalMetrics.collapseFocusClicks(genSteps);
+
+        List<String> missingPlaceholders = new ArrayList<>();
         double stepRecall     = EvalMetrics.computeStepRecall(gtSteps, genSteps);
         double stepPrecision  = EvalMetrics.computeStepPrecision(gtSteps, genSteps);
         double stepOrderScore = EvalMetrics.computeStepOrderScore(gtSteps, genSteps);
         double labelAccuracy  = EvalMetrics.computeLabelAccuracy(gtSteps, genSteps);
         double placeholderScore = EvalMetrics.computePlaceholderScore(
-                generated.navigationGoal(), evalCase.taskType(), evalCase.mode(), credentialLeaks);
+                generated.navigationGoal(), genSteps, evalCase.mode(), gt.tokens(), missingPlaceholders);
         double paginationScore = EvalMetrics.computePaginationScore(
                 gt.paginationPattern(),
                 generated.paginationPattern() != null ? generated.paginationPattern()
                         : new PaginationPattern("unknown", "", ""),
                 evalCase.taskType());
+
+        // Record whether each check had anything to check, so the report can say "N/A"
+        // instead of printing a score that was never actually earned.
+        boolean placeholderApplicable = "PLACEHOLDER".equalsIgnoreCase(evalCase.mode())
+                && gt.tokens() != null
+                && gt.tokens().stream().anyMatch(t -> t.name() != null && !t.name().isBlank());
+        boolean paginationApplicable = "AGGREGATION".equalsIgnoreCase(evalCase.taskType())
+                && gt.paginationPattern() != null;
 
         List<String> hallucinated = EvalMetrics.detectHallucinatedSteps(gtSteps, genSteps);
         List<String> missing      = EvalMetrics.detectMissingSteps(gtSteps, genSteps);
@@ -305,12 +366,14 @@ public final class VideoAnalysisEvaluator {
         double judgePlaceholder   = 0.0;
         double judgeOverall       = 0.0;
         String judgeReasoning     = "";
+        boolean judgeApplicable   = false;
 
         if (!skipJudge) {
             log.accept("LOG:INFO:  Calling LLM judge...");
             LlmJudge.JudgeResult judgeResult;
             try {
                 judgeResult = LlmJudge.judge(evalCase, generated, bedrock);
+                judgeApplicable = true;
             } catch (Exception e) {
                 issues.add("Judge call failed: " + e.getMessage());
                 log.accept("LOG:ERROR:  Judge call failed: " + e.getMessage());
@@ -332,6 +395,7 @@ public final class VideoAnalysisEvaluator {
 
         EvalResult partialResult = EvalResult.builder()
                 .caseId(evalCase.id())
+                .uiVariety(evalCase.uiVariety())
                 .description(evalCase.description())
                 .taskType(evalCase.taskType())
                 .mode(evalCase.mode())
@@ -341,6 +405,9 @@ public final class VideoAnalysisEvaluator {
                 .labelAccuracyScore(labelAccuracy)
                 .placeholderScore(placeholderScore)
                 .paginationScore(paginationScore)
+                .placeholderApplicable(placeholderApplicable)
+                .paginationApplicable(paginationApplicable)
+                .judgeApplicable(judgeApplicable)
                 .overallScore(0.0)  // recomputed below
                 .judgeCorrectnessScore(judgeCorrectness)
                 .judgeOrderScore(judgeOrder)
@@ -355,7 +422,7 @@ public final class VideoAnalysisEvaluator {
                 .hallucinatedSteps(hallucinated)
                 .missingSteps(missing)
                 .misordered(misordered)
-                .credentialLeaks(credentialLeaks)
+                .missingPlaceholders(missingPlaceholders)
                 .issues(issues)
                 .durationMs(System.currentTimeMillis() - startMs)
                 .tokenUsage(tokenUsage)
@@ -365,6 +432,7 @@ public final class VideoAnalysisEvaluator {
 
         return EvalResult.builder()
                 .caseId(evalCase.id())
+                .uiVariety(evalCase.uiVariety())
                 .description(evalCase.description())
                 .taskType(evalCase.taskType())
                 .mode(evalCase.mode())
@@ -374,6 +442,9 @@ public final class VideoAnalysisEvaluator {
                 .labelAccuracyScore(labelAccuracy)
                 .placeholderScore(placeholderScore)
                 .paginationScore(paginationScore)
+                .placeholderApplicable(placeholderApplicable)
+                .paginationApplicable(paginationApplicable)
+                .judgeApplicable(judgeApplicable)
                 .overallScore(overallScore)
                 .judgeCorrectnessScore(judgeCorrectness)
                 .judgeOrderScore(judgeOrder)
@@ -388,7 +459,7 @@ public final class VideoAnalysisEvaluator {
                 .hallucinatedSteps(hallucinated)
                 .missingSteps(missing)
                 .misordered(misordered)
-                .credentialLeaks(credentialLeaks)
+                .missingPlaceholders(missingPlaceholders)
                 .issues(issues)
                 .durationMs(System.currentTimeMillis() - startMs)
                 .tokenUsage(tokenUsage)
@@ -400,6 +471,7 @@ public final class VideoAnalysisEvaluator {
     private static EvalResult buildErrorResult(EvalCase c, List<String> issues, long durationMs) {
         return EvalResult.builder()
                 .caseId(c.id())
+                .uiVariety(c.uiVariety())
                 .description(c.description())
                 .taskType(c.taskType())
                 .mode(c.mode())

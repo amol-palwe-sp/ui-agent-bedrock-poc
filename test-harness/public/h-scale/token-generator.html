@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Token generator</title><link rel="stylesheet" href="/styles.css" />
+  <style>.token{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:20px;font-weight:700;
+    background:#eef2fb;padding:14px;border-radius:8px;text-align:center;letter-spacing:.05em}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Token generator (tab 2)</h1></header>
+  <main><div class="card">
+    <h2>Generate an access token</h2>
+    <p class="subtitle">Click Generate, then copy the token back to the first tab.</p>
+    <div style="margin-top:14px;"><button onclick="gen()" aria-label="Generate token">Generate token</button></div>
+    <div id="out" style="display:none;margin-top:18px;">
+      <label>Your token</label>
+      <div class="token" id="tok">TKN-4417-DEMO</div>
+      <p class="status" style="margin-top:10px;">Return to the first tab and paste this value.</p>
+    </div>
+  </div></main>
+  <script>function gen(){ document.getElementById('out').style.display='block'; }</script>
+</body>
+</html>

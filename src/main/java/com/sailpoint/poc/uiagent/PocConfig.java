@@ -6,6 +6,7 @@ import com.sailpoint.poc.uiagent.config.AggregationConfig;
 import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.BrowserConfig;
 import com.sailpoint.poc.uiagent.config.NetworkAggregationConfig;
+import com.sailpoint.poc.uiagent.config.RelevanceConfig;
 import com.sailpoint.poc.uiagent.config.ReplayConfig;
 import com.sailpoint.poc.uiagent.config.VideoConfig;
 
@@ -186,6 +187,45 @@ public final class PocConfig {
         return optional("script.output.dir", "./output/scripts");
     }
 
+    // --- Video relevance triage (pre-flight rejection) ---
+
+    /** When false, every uploaded video goes straight to step generation. */
+    public boolean videoRelevanceEnabled() {
+        return Boolean.parseBoolean(optional("video.relevance.enabled", "true"));
+    }
+
+    /** Frames sampled from the extracted set and shown to the triage classifier. */
+    public int videoRelevanceSampleFrames() {
+        return Integer.parseInt(optional("video.relevance.sample.frames", "8"));
+    }
+
+    /** Model used for triage. Blank uses {@link #bedrockModelId()}. */
+    public String videoRelevanceModelId() {
+        return optional("video.relevance.model.id", "");
+    }
+
+    public int videoRelevanceMaxTokens() {
+        return Integer.parseInt(optional("video.relevance.max.tokens", "512"));
+    }
+
+    /**
+     * Confidence floor for a rejection (0–100). Below it the video is accepted with a warning:
+     * a false accept is caught by downstream confidence scoring, a false reject is not
+     * recoverable by the user.
+     */
+    public int videoRelevanceMinConfidence() {
+        return Integer.parseInt(optional("video.relevance.min.confidence", "75"));
+    }
+
+    /**
+     * Whether a real but consumer-facing web app (shopping, social, webmail) is rejected
+     * outright or merely flagged. Defaults to flagging, since such recordings are still
+     * structurally analysable and the scope boundary is a product decision.
+     */
+    public boolean videoRelevanceRejectOutOfDomain() {
+        return Boolean.parseBoolean(optional("video.relevance.reject.out.of.domain", "false"));
+    }
+
     public int videoGridSize() {
         return clampGrid(Integer.parseInt(optional("video.grid.size", "12")));
     }
@@ -318,6 +358,17 @@ public final class PocConfig {
      */
     public double videoSelectionMinGapSeconds() {
         return Double.parseDouble(optional("video.selection.min.gap.seconds", "0.5"));
+    }
+
+    /**
+     * Uniform temporal coverage floor: guarantees at least one selected frame per this many
+     * seconds across the entire timeline (including the trailing region after the last
+     * high-scoring frame), independent of the visual-change score. Ensures slow or
+     * low-visual-delta activity such as typing into a field is never dropped. Set to
+     * {@code 0} to disable and rely on the score-based max-gap net only. Defaults to 2.5.
+     */
+    public double videoSelectionCoverageIntervalSeconds() {
+        return Double.parseDouble(optional("video.selection.coverage.interval.seconds", "2.5"));
     }
 
     private static int clampGrid(int size) {
@@ -455,7 +506,22 @@ public final class PocConfig {
                 videoPatternElementMinClusterSize(), videoPatternElementPersistFrames(), videoPatternElementBonus(),
                 videoPatternScrollThreshold(), videoPatternScrollEndBonus(), videoPatternScrollMidPenalty(),
                 videoSelectionMaxGapSeconds(), videoSelectionSimilarityThreshold(),
-                videoUrlBarMandatoryThreshold(), videoSelectionMinGapSeconds());
+                videoUrlBarMandatoryThreshold(), videoSelectionMinGapSeconds(),
+                videoSelectionCoverageIntervalSeconds());
+    }
+
+    /**
+     * Returns pre-flight video-relevance triage settings as a single typed object.
+     * Prefer this over calling individual video.relevance.* methods in new code.
+     */
+    public RelevanceConfig relevance() {
+        return new RelevanceConfig(
+                videoRelevanceEnabled(),
+                videoRelevanceSampleFrames(),
+                videoRelevanceModelId(),
+                videoRelevanceMaxTokens(),
+                videoRelevanceMinConfidence(),
+                videoRelevanceRejectOutOfDomain());
     }
 
     /**

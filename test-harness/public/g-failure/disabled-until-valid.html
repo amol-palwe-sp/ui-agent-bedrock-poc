@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Disabled until valid — Failure</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Disabled until valid</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Gated submit button <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">The submit button stays <code>disabled</code> until every field is filled and the terms
+      checkbox is ticked. The action ladder detects disabled elements and refuses the click, so the agent must
+      complete all prerequisites first rather than repeatedly attempting the button.</p>
+
+    <label for="pname">Project name</label>
+    <input type="text" id="pname" aria-label="Project name" oninput="check()" />
+
+    <label for="powner">Project owner</label>
+    <input type="text" id="powner" aria-label="Project owner" oninput="check()" />
+
+    <label for="pbudget">Budget code</label>
+    <input type="text" id="pbudget" aria-label="Budget code" oninput="check()" />
+
+    <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:400">
+      <input type="checkbox" id="terms" aria-label="Accept terms" style="width:auto" onchange="check()" />
+      I accept the terms and conditions
+    </label>
+
+    <div style="margin-top:18px;">
+      <button id="submitBtn" disabled onclick="document.getElementById('ok').style.display='block'">Create project</button>
+      <span class="status" id="why" style="margin-inline-start:10px;">Complete all fields to enable</span>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Project created.</div>
+  </div></main>
+  <script>
+    function check(){
+      const filled = ['pname','powner','pbudget'].every(id => document.getElementById(id).value.trim() !== '');
+      const terms  = document.getElementById('terms').checked;
+      const ready  = filled && terms;
+      document.getElementById('submitBtn').disabled = !ready;
+      document.getElementById('why').textContent = ready ? 'Ready to submit' : 'Complete all fields to enable';
+    }
+  </script>
+</body>
+</html>

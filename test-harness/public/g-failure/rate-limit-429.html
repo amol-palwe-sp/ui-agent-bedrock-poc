@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rate limited — Failure</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Rate limited (429)</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Expected outcome: TERMINATE.</strong> The endpoint returns HTTP 429 with
+      <code>Retry-After: 120</code>. Waiting 120s exceeds any sane step budget, so the correct behaviour is to
+      stop and report the rate limit — not to retry in a loop.</div>
+    <h2>Throttled endpoint <span class="pill gap">Expect TERMINATE</span></h2>
+    <p class="subtitle">Each search hits a throttled API.</p>
+    <label for="q">Search directory</label>
+    <input type="search" id="q" aria-label="Search directory" />
+    <div style="margin-top:18px;">
+      <button onclick="location.href='/api/error/429'" aria-label="Search">Search</button>
+    </div>
+  </div></main>
+</body>
+</html>

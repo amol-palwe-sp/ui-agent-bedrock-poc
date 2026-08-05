@@ -18,15 +18,46 @@ public final class EvalMetrics {
 
     private static final double FUZZY_THRESHOLD = 0.6;
 
-    /** Metric weights for overall score computation. */
-    private static final double W_STEP_RECALL     = 0.30;
-    private static final double W_STEP_PRECISION  = 0.20;
-    private static final double W_STEP_ORDER      = 0.15;
-    private static final double W_LABEL_ACCURACY  = 0.15;
+    /**
+     * Weights for the composite trend score.
+     *
+     * <p>Label accuracy is deliberately absent. Word-overlap on labels penalises harmless
+     * wording differences — "click the Save button" vs "click Save button" scores 0.75 purely
+     * for the dropped article — so it is reported as a diagnostic only and feeds no score.
+     * Judging whether a label is <em>meaningfully</em> wrong is the LLM judge's job.
+     *
+     * <p>Weights are renormalised over whichever metrics apply to the case, so they always
+     * sum to 1.0 regardless of which checks were skipped.
+     */
+    private static final double W_STEP_RECALL     = 0.35;
+    private static final double W_STEP_PRECISION  = 0.25;
+    private static final double W_STEP_ORDER      = 0.20;
     private static final double W_PLACEHOLDER     = 0.10;
     private static final double W_PAGINATION      = 0.10;
 
+    /**
+     * Per-condition pass thresholds.
+     *
+     * <p>A case must clear each of these on its own rather than clearing an average, so a weak
+     * dimension cannot hide behind strong ones. Provisional values pending team sign-off.
+     */
+    public static final double MIN_STEP_RECALL    = 0.70;
+    public static final double MIN_STEP_PRECISION = 0.70;
+    public static final double MIN_STEP_ORDER     = 0.80;
+    /** Judge scores are 0–10, so this is the equivalent of the 0.70 bar used for the others. */
+    public static final double MIN_JUDGE_OVERALL  = 7.0;
+
     private static final Pattern EMAIL_PATTERN = Pattern.compile("[\\w._%+\\-]+@[\\w.\\-]+\\.[a-zA-Z]{2,}");
+
+    /** Leading action verb of a step, stripped when isolating a step's target for comparison. */
+    private static final Pattern LEADING_VERB =
+            Pattern.compile("^\\s*(click|enter|type|select|fill|choose|press|tap|check|toggle)\\b",
+                    Pattern.CASE_INSENSITIVE);
+    /** Connective / affordance words that carry no target identity. */
+    private static final Pattern TARGET_NOISE =
+            Pattern.compile("(?i)\\b(in|into|on|to|from|the|a|an|field|button|input|box|area|value|dropdown|menu|option)\\b");
+    /** A focus-click collapses into the following entry step when their targets are at least this similar. */
+    private static final double FOCUS_CLICK_TARGET_THRESHOLD = 0.3;
 
     /**
      * Matches values directly entered or selected by the agent:
@@ -37,6 +68,59 @@ public final class EvalMetrics {
             Pattern.compile("(?:enter|select|type|fill)\\s+\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
 
     private EvalMetrics() {}
+
+    // ── Step normalization ────────────────────────────────────────────────────
+
+    /**
+     * Collapses a focus-click that immediately precedes typing into the same field. Browser
+     * recordings routinely capture a click to focus a field followed by the actual text entry;
+     * ground-truth plans treat that pair as a single "enter" step. Left unnormalized, the
+     * focus-click is counted as a hallucinated step and tanks precision.
+     *
+     * <p>A leading {@code click} step is dropped only when the very next step is an
+     * enter/type/select/fill action whose <em>target</em> is similar to the click's target
+     * (see {@link #FOCUS_CLICK_TARGET_THRESHOLD}). Genuine navigation clicks — e.g.
+     * {@code "click Add"} then {@code "enter ... in Name"} — have dissimilar targets and are
+     * preserved.
+     *
+     * @return a new list with focus-clicks removed (never mutates the input)
+     */
+    public static List<String> collapseFocusClicks(List<String> steps) {
+        List<String> out = new ArrayList<>();
+        if (steps == null) {
+            return out;
+        }
+        for (int i = 0; i < steps.size(); i++) {
+            String cur = steps.get(i);
+            boolean focusClick = i + 1 < steps.size()
+                    && isClick(cur)
+                    && isEntry(steps.get(i + 1))
+                    && StepSimilarity.similarity(targetOf(cur), targetOf(steps.get(i + 1)))
+                            >= FOCUS_CLICK_TARGET_THRESHOLD;
+            if (!focusClick) {
+                out.add(cur);
+            }
+        }
+        return out;
+    }
+
+    private static boolean isClick(String s) {
+        return s != null && s.trim().toLowerCase().startsWith("click");
+    }
+
+    private static boolean isEntry(String s) {
+        if (s == null) return false;
+        String t = s.trim().toLowerCase();
+        return t.startsWith("enter") || t.startsWith("type") || t.startsWith("select") || t.startsWith("fill");
+    }
+
+    /** Isolates a step's target by stripping the leading verb, quoted values, and connective words. */
+    private static String targetOf(String step) {
+        String s = LEADING_VERB.matcher(nullToEmpty(step)).replaceFirst(" ");
+        s = StepSimilarity.maskValues(s);
+        s = TARGET_NOISE.matcher(s).replaceAll(" ");
+        return s;
+    }
 
     // ── Core metric computations ──────────────────────────────────────────────
 
@@ -130,44 +214,48 @@ public final class EvalMetrics {
     }
 
     /**
-     * Checks for credential leaks — only meaningful for AGGREGATION + PLACEHOLDER mode.
+     * Checks that every declared variable appears as a placeholder in the generated output.
      *
-     * <p>For PROVISIONING tasks this always returns {@code 1.0} because the
-     * {@code VideoToGoalPrompt} transcribes literal values from the video by design;
-     * placeholder tokenization happens afterward in the UI as a post-processing step.
+     * <p>This is a <em>placeholder-presence</em> check, not a secret-value scan: we do not
+     * inspect what any literal value is. We only verify that each variable defined in the
+     * ground truth ({@code tokens}) was emitted as a {@code {Name}} placeholder somewhere in
+     * the generated goal or steps — rather than being dropped or written out literally.
      *
-     * <p>For AGGREGATION LITERAL mode this returns {@code 1.0} trivially.
+     * <p>Only meaningful for PLACEHOLDER mode with declared variables; returns {@code 1.0}
+     * (nothing to check) for LITERAL mode or when there are no tokens.
      *
-     * <p>For AGGREGATION PLACEHOLDER mode the prompt explicitly instructs Claude to
-     * output {@code {Token}} syntax, so any literal credential in the output is a
-     * genuine model failure.
-     *
-     * @param navigationGoal  the generated navigation goal string (raw Claude output)
-     * @param taskType        "PROVISIONING" or "AGGREGATION"
-     * @param mode            "PLACEHOLDER" or "LITERAL"
-     * @param credentialLeaks mutable list to populate with detected leaks (may be null)
-     * @return 1.0 if clean / not applicable, 0.0 if any leak found
+     * @param navigationGoal      the generated navigation goal string (raw model output)
+     * @param generatedSteps      the generated step list
+     * @param mode                "PLACEHOLDER" or "LITERAL"
+     * @param tokens              ground-truth variable definitions
+     * @param missingPlaceholders mutable list populated with variables NOT found as placeholders (may be null)
+     * @return fraction of variables present as placeholders (1.0 if none to check)
      */
     public static double computePlaceholderScore(
-            String navigationGoal, String taskType, String mode, List<String> credentialLeaks) {
-        // PROVISIONING: literals are expected — tokenization is a UI post-processing step
-        if ("PROVISIONING".equalsIgnoreCase(taskType)) return 1.0;
-        // AGGREGATION LITERAL: nothing to check
+            String navigationGoal, List<String> generatedSteps, String mode,
+            List<EvalCase.TokenDef> tokens, List<String> missingPlaceholders) {
         if (!"PLACEHOLDER".equalsIgnoreCase(mode)) return 1.0;
-        if (navigationGoal == null || navigationGoal.isBlank()) return 1.0;
+        if (tokens == null || tokens.isEmpty()) return 1.0;
 
-        List<String> found = detectCredentialLeaks(navigationGoal);
-        if (credentialLeaks != null) credentialLeaks.addAll(found);
-        return found.isEmpty() ? 1.0 : 0.0;
-    }
+        StringBuilder sb = new StringBuilder(nullToEmpty(navigationGoal));
+        if (generatedSteps != null) {
+            for (String s : generatedSteps) sb.append(' ').append(nullToEmpty(s));
+        }
+        String haystack = sb.toString().toLowerCase();
 
-    /**
-     * @deprecated Use {@link #computePlaceholderScore(String, String, String, List)} instead.
-     */
-    @Deprecated
-    public static double computePlaceholderScore(
-            String navigationGoal, String mode, List<String> credentialLeaks) {
-        return computePlaceholderScore(navigationGoal, "AGGREGATION", mode, credentialLeaks);
+        int total = 0;
+        int present = 0;
+        for (EvalCase.TokenDef t : tokens) {
+            String name = t.name() == null ? "" : t.name().trim();
+            if (name.isEmpty()) continue;
+            total++;
+            if (haystack.contains(("{" + name + "}").toLowerCase())) {
+                present++;
+            } else if (missingPlaceholders != null) {
+                missingPlaceholders.add("{" + name + "}");
+            }
+        }
+        return total == 0 ? 1.0 : (double) present / total;
     }
 
     /**
@@ -189,33 +277,38 @@ public final class EvalMetrics {
     }
 
     /**
-     * Computes the weighted overall score from individual metric results.
+     * Computes the composite trend score across whichever metrics apply to this case.
      *
-     * <p>Weight table:
-     * <pre>
-     *                      AGGREGATION   PROVISIONING
-     *  stepRecall               30%          50%   ← gains pagination(10%) + placeholder(10%)
-     *  stepPrecision            20%          20%
-     *  stepOrderScore           15%          15%
-     *  labelAccuracyScore       15%          15%
-     *  placeholderScore         10%           0%   ← N/A: tokenization is a UI post-process
-     *  paginationScore          10%           0%   ← N/A: no pagination for provisioning
-     * </pre>
+     * <p>This is a movement indicator for tracking regressions between runs, <em>not</em> a
+     * pass/fail verdict — see {@link EvalResult#passed()}, which requires each condition to
+     * clear its own bar. A single blended number was previously the pass rule and it let a
+     * failing dimension hide behind strong ones.
+     *
+     * <p>Checks that do not apply to a case are excluded and the remaining weights are
+     * renormalised, so a skipped check neither helps nor hurts. Scoring a non-applicable
+     * check as 0.0 was the old behaviour and it silently depressed every provisioning case.
      */
     public static double computeOverallScore(EvalResult result) {
-        boolean isProvisioning = "PROVISIONING".equalsIgnoreCase(result.taskType());
+        double weightedSum = 0.0;
+        double totalWeight = 0.0;
 
-        // For PROVISIONING: pagination (10%) + placeholder (10%) both roll into stepRecall
-        double wRecall = isProvisioning
-                ? W_STEP_RECALL + W_PAGINATION + W_PLACEHOLDER
-                : W_STEP_RECALL;
+        weightedSum += result.stepRecall()     * W_STEP_RECALL;
+        totalWeight += W_STEP_RECALL;
+        weightedSum += result.stepPrecision()  * W_STEP_PRECISION;
+        totalWeight += W_STEP_PRECISION;
+        weightedSum += result.stepOrderScore() * W_STEP_ORDER;
+        totalWeight += W_STEP_ORDER;
 
-        return (result.stepRecall()         * wRecall)
-             + (result.stepPrecision()      * W_STEP_PRECISION)
-             + (result.stepOrderScore()     * W_STEP_ORDER)
-             + (result.labelAccuracyScore() * W_LABEL_ACCURACY)
-             + (result.placeholderScore()   * (isProvisioning ? 0.0 : W_PLACEHOLDER))
-             + (result.paginationScore()    * (isProvisioning ? 0.0 : W_PAGINATION));
+        if (result.placeholderApplicable()) {
+            weightedSum += result.placeholderScore() * W_PLACEHOLDER;
+            totalWeight += W_PLACEHOLDER;
+        }
+        if (result.paginationApplicable()) {
+            weightedSum += result.paginationScore() * W_PAGINATION;
+            totalWeight += W_PAGINATION;
+        }
+
+        return totalWeight == 0.0 ? 0.0 : weightedSum / totalWeight;
     }
 
     // ── Detection helpers ─────────────────────────────────────────────────────

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>200+ elements — Scale</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+    .cellbtn{padding:8px;font-size:12px;background:#eef2fb;color:var(--ink);border-radius:6px;border:1px solid var(--line);cursor:pointer}
+    .cellbtn.target{background:#fff4d6;border-color:#f0d089}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>200+ interactive elements</h1><a href="/">Catalog</a></header>
+  <main style="max-width:1000px;"><div class="card">
+    <div class="gap-note"><strong>Context-window stress:</strong> the indexed element list is sent to the model on
+      every observation turn. With 200+ controls the list alone becomes large, driving up per-step token cost and
+      making it harder to ground the correct target. Watch the token counts in the eval report for this one.</div>
+    <h2>Dense control surface <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">One specific button among 200 is the target: <strong>Toggle feature 137</strong>.</p>
+    <div class="grid" id="grid"></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+  </div></main>
+  <script>
+    const grid=document.getElementById('grid');
+    for(let i=1;i<=200;i++){
+      const b=document.createElement('button');
+      b.className='cellbtn' + (i===137?' target':'');
+      b.textContent='Toggle feature '+i;
+      b.setAttribute('aria-label','Toggle feature '+i);
+      b.onclick=()=>{ const o=document.getElementById('ok');
+        o.textContent='Toggled feature '+i+(i===137?' — correct target.':' — wrong target.');
+        o.style.display='block'; };
+      grid.appendChild(b);
+    }
+  </script>
+</body>
+</html>

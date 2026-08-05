@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Mid-flow resume — Scale</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .steps{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap}
+    .step{padding:6px 12px;border-radius:999px;font-size:12px;font-weight:600;background:#eef2fb;color:var(--muted)}
+    .step.done{background:#e4f6ec;color:var(--ok)}
+    .step.current{background:var(--brand);color:#fff}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Mid-flow resume</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Proxy for "recording starts mid-process" (P0):</strong> the goal describes the
+      whole flow from step 1, but the page is already at step 3 with the earlier steps completed. A correct agent
+      recognises the completed work and continues from where it is. A naive one hunts for step-1 fields that no
+      longer exist and loops.</div>
+
+    <div class="steps">
+      <span class="step done">1. Account ✓</span>
+      <span class="step done">2. Profile ✓</span>
+      <span class="step current">3. Permissions</span>
+      <span class="step">4. Review</span>
+    </div>
+
+    <h2>Step 3 — Permissions <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Steps 1 and 2 were completed in a previous session and cannot be revisited.</p>
+
+    <div class="card" style="background:#f7f9fd;box-shadow:none;">
+      <p class="status" style="margin:0">
+        <strong>Already captured:</strong> account <code>ada@demo.local</code>,
+        profile <code>Ada Lovelace, Engineering</code>
+      </p>
+    </div>
+
+    <label for="role">Access level</label>
+    <select id="role" aria-label="Access level">
+      <option>Choose…</option><option>Read only</option><option>Contributor</option><option>Administrator</option>
+    </select>
+
+    <label for="scope">Scope</label>
+    <input type="text" id="scope" aria-label="Scope" />
+
+    <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Continue to review</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Permissions saved — flow resumed correctly.</div>
+  </div></main>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>System dark mode — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* Honours the OS/browser colour scheme rather than a manual toggle.
+       Run with Playwright colorScheme=dark to flip this. */
+    @media (prefers-color-scheme: dark){
+      body{background:#10151f;color:#eef2fa}
+      .card{background:#1a2130;border-color:#2a3345}
+      input,select,textarea{background:#141a26;color:#eef2fa;border-color:#2a3345}
+      .subtitle{color:#9aa6bd}
+      th{background:#222b3c;color:#9aa6bd}
+    }
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>System dark mode</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>prefers-color-scheme <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">Colours follow the system preference via <code>@media (prefers-color-scheme: dark)</code>.
+      Contrast changes substantially, which tests whether the vision model still grounds elements correctly.
+      Current scheme: <strong id="scheme"></strong></p>
+    <label for="grp">Group name</label>
+    <input type="text" id="grp" aria-label="Group name" />
+    <label for="vis">Visibility</label>
+    <select id="vis" aria-label="Visibility"><option>Private</option><option>Public</option></select>
+    <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Create group</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Group created.</div>
+  </div></main>
+  <script>
+    document.getElementById('scheme').textContent =
+      window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  </script>
+</body>
+</html>

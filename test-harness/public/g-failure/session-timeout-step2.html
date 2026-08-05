@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Step 2 — Session timeout</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Step 2 — Enter details</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Provisioning details</h2>
+    <p class="subtitle">Your session is short-lived. Take too long here and the next step will bounce you to
+      re-authentication.</p>
+    <label for="first">First name</label>
+    <input type="text" id="first" aria-label="First name" />
+    <label for="last">Last name</label>
+    <input type="text" id="last" aria-label="Last name" />
+    <label for="dept">Department</label>
+    <select id="dept" aria-label="Department"><option>Choose…</option><option>Engineering</option><option>Finance</option></select>
+    <div style="margin-top:18px;">
+      <a class="btn" href="/g-failure/session-timeout-step2.html" aria-label="Continue to review">Continue to review</a>
+    </div>
+    <p class="status" id="countdown" style="margin-top:14px;"></p>
+  </div></main>
+  <script>
+    // Purely informational countdown so a human can see the window closing.
+    let left = 12;
+    const el = document.getElementById('countdown');
+    const t = setInterval(() => {
+      left--;
+      el.textContent = left > 0 ? `Session expires in ~${left}s` : 'Session expired — the next action will redirect.';
+      if (left <= 0) clearInterval(t);
+    }, 1000);
+  </script>
+</body>
+</html>

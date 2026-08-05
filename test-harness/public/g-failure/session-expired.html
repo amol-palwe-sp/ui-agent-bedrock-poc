@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session expired — Failure</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Session expired</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Unexpected redirect.</strong> The agent was pushed here mid-flow. Recovering
+      means recognising the new page and signing in again — not retrying the previous step's selectors.</div>
+    <h2>Your session has expired</h2>
+    <p class="subtitle">Please sign in again to continue where you left off.</p>
+    <form method="POST" action="/timeout-login">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" aria-label="Email" value="test.user@demo.local" />
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" aria-label="Password" />
+      <div style="margin-top:18px;"><button type="submit" aria-label="Sign in again">Sign in again</button></div>
+    </form>
+  </div></main>
+</body>
+</html>

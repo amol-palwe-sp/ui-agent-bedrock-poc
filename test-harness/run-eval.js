@@ -18,7 +18,7 @@
  *   node run-eval.js --headless        # pass headless=true to the POC
  */
 
-const { spawn }    = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 const fs           = require('fs');
 const path         = require('path');
 
@@ -36,10 +36,13 @@ const POC_DIR     = path.resolve(__dirname, '..');
 const REPORT_DIR  = path.join(POC_DIR, 'eval-reports');
 
 // ── Scenario definitions ───────────────────────────────────────────────────────
-// verdict: 'pass' | 'ladder' | 'gap'
-// 'pass'   → native action path; expected to DONE
-// 'ladder' → generic CLICK/TYPE path; expected to DONE (usually)
-// 'gap'    → no code path; expected to TERMINATE or MAX_STEPS
+// verdict: 'pass' | 'ladder' | 'gap' | 'terminate'
+// 'pass'      → native action path; expected to DONE
+// 'ladder'    → generic CLICK/TYPE path; expected to DONE (usually)
+// 'gap'       → no code path; expected to TERMINATE or MAX_STEPS
+// 'terminate' → a genuine dead end; TERMINATE is the CORRECT result and scores
+//               as a pass. Looping to MAX_STEPS here is the real failure because
+//               it burns tokens without progress.
 
 const SCENARIOS = [
 
@@ -266,6 +269,150 @@ const SCENARIOS = [
   { tier: 'D', name: 'merged-headers', verdict: 'ladder',
     url: `${BASE}/d-aggregation/merged-headers.html`,
     goal: 'click Page 2 button, then click Page 3 button to navigate through accounts' },
+
+  // ── Tier E: Obscuring & blocking (P0) ──────────────────────────────────────
+  { tier: 'E', name: 'cookie-consent-banner', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/cookie-consent-banner.html`,
+    goal: 'accept the cookie banner, then enter "Ada Lovelace" in Full name, then enter "ada@demo.local" in Email, then click Submit application',
+    note: 'Consent banner covers the submit button.' },
+
+  { tier: 'E', name: 'modal-blocks-target', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/modal-blocks-target.html`,
+    goal: 'dismiss the promotional offer, then enter "Acme Ltd" in Account name, then click Create account',
+    note: 'Promo modal intercepts all clicks.' },
+
+  { tier: 'E', name: 'sticky-header-overlap', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/sticky-header-overlap.html`,
+    goal: 'scroll down to the Approval code field, then enter "AC-9931" in it, then click Approve',
+    note: 'Sticky toolbar covers the scroll target.' },
+
+  { tier: 'E', name: 'toast-autodismiss', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/toast-autodismiss.html`,
+    goal: 'enter "quarterly review" in the Note field, then click Save, then click Confirm',
+    note: 'Timed toast covers Confirm for 5s — genuine race, may vary per run.' },
+
+  { tier: 'E', name: 'layout-shift-click', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/layout-shift-click.html`,
+    goal: 'enter "500" in the Amount field, then click Send transfer',
+    note: 'Injected banner shifts buttons ~2.5s after load.' },
+
+  { tier: 'E', name: 'full-page-interstitial', verdict: 'ladder',
+    url: `${BASE}/e-obscuring/full-page-interstitial.html`,
+    goal: 'close the announcement, then enter "ada" in Search users, then click Search',
+    note: 'Whole-viewport overlay with only a small close control.' },
+
+  // ── Tier F: Viewport & rendering (P1 / P2) ─────────────────────────────────
+  { tier: 'F', name: 'responsive-reflow', verdict: 'ladder',
+    url: `${BASE}/f-viewport/responsive-reflow.html`,
+    goal: 'enter "alovelace" in Username, then select "Admin" from Role, then click Save user',
+    note: 'Below 900px viewport the actions collapse behind a burger menu.' },
+
+  { tier: 'F', name: 'zoom-125', verdict: 'ladder',
+    url: `${BASE}/f-viewport/zoom.html?level=125`,
+    goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy',
+    note: 'CSS scale 1.25 — emulated browser zoom.' },
+
+  { tier: 'F', name: 'zoom-150', verdict: 'ladder',
+    url: `${BASE}/f-viewport/zoom.html?level=150`,
+    goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy',
+    note: 'CSS scale 1.5.' },
+
+  { tier: 'F', name: 'zoom-200', verdict: 'ladder',
+    url: `${BASE}/f-viewport/zoom.html?level=200`,
+    goal: 'enter "Access policy" in Policy name, then select "Ada" from Owner, then click Create policy',
+    note: 'CSS scale 2.0 — heaviest coordinate shift.' },
+
+  { tier: 'F', name: 'dark-mode-prefers', verdict: 'pass',
+    url: `${BASE}/f-viewport/dark-mode-prefers.html`,
+    goal: 'enter "Platform team" in Group name, then select "Private" from Visibility, then click Create group',
+    note: 'Honours prefers-color-scheme.' },
+
+  { tier: 'F', name: 'light-dark-toggle', verdict: 'pass',
+    url: `${BASE}/f-viewport/light-dark-toggle.html`,
+    goal: 'click Dark theme, then enter "Q3 summary" in Report title, then click Generate report',
+    note: 'Theme switches mid-flow; DOM unchanged, visuals differ.' },
+
+  { tier: 'F', name: 'low-contrast-tiny-text', verdict: 'ladder',
+    url: `${BASE}/f-viewport/low-contrast-tiny-text.html`,
+    goal: 'enter "billing-svc" in Service name, then select "Production" from Environment, then enter "ada@demo.local" in Owner email, then click Register service',
+    note: 'Vision-degradation proxy for low-quality recordings.' },
+
+  { tier: 'F', name: 'rtl-layout', verdict: 'ladder',
+    url: `${BASE}/f-viewport/rtl-layout.html`,
+    goal: 'enter "Ada Lovelace" in the Full name field, then click Save',
+    note: 'Arabic RTL — positional reasoning is mirrored.' },
+
+  { tier: 'F', name: 'long-page-scroll', verdict: 'ladder',
+    url: `${BASE}/f-viewport/long-page-scroll.html`,
+    goal: 'scroll down to Section 20, then enter "FIN-2026" in the Final approval code field, then click Submit approval',
+    note: '20 sections; target only in the last one.' },
+
+  // ── Tier G: Failure & recovery ─────────────────────────────────────────────
+  { tier: 'G', name: 'infinite-spinner', verdict: 'terminate',
+    url: `${BASE}/g-failure/infinite-spinner.html`,
+    goal: 'click Load data, then enter "test" in the account details field once it loads',
+    note: 'Never resolves. TERMINATE is correct; MAX_STEPS means it looped.' },
+
+  { tier: 'G', name: 'server-error-500', verdict: 'terminate',
+    url: `${BASE}/g-failure/server-error-500.html`,
+    goal: 'enter "acme" in Tenant name, then click Provision tenant, then confirm the tenant was created',
+    note: 'Submit navigates to a real HTTP 500.' },
+
+  { tier: 'G', name: 'rate-limit-429', verdict: 'terminate',
+    url: `${BASE}/g-failure/rate-limit-429.html`,
+    goal: 'enter "ada" in Search directory, then click Search, then read the first result',
+    note: 'HTTP 429 with Retry-After: 120 — waiting is not viable.' },
+
+  { tier: 'G', name: 'session-timeout-midflow', verdict: 'ladder',
+    url: `${BASE}/g-failure/session-timeout-midflow.html`,
+    goal: 'enter "Demo!Pass123" in the Password field, then click Sign in, then enter "Ada" in First name, then enter "Lovelace" in Last name, then select "Engineering" from Department, then click Continue to review',
+    note: 'Session expires after 12s, forcing an unexpected re-auth redirect.' },
+
+  { tier: 'G', name: 'validation-errors', verdict: 'ladder',
+    url: `${BASE}/g-failure/validation-errors.html`,
+    goal: 'enter "ada@demo.local" in Work email, then enter "123" in Employee ID, then click Create employee, then correct any validation errors shown and submit again',
+    note: 'First submit always fails; agent must read errors and fix.' },
+
+  { tier: 'G', name: 'disabled-until-valid', verdict: 'ladder',
+    url: `${BASE}/g-failure/disabled-until-valid.html`,
+    goal: 'enter "Apollo" in Project name, then enter "Ada" in Project owner, then enter "BUD-77" in Budget code, then check the accept terms checkbox, then click Create project',
+    note: 'Submit stays disabled until all prerequisites are met.' },
+
+  { tier: 'G', name: 'confirm-by-typing', verdict: 'ladder',
+    url: `${BASE}/g-failure/confirm-by-typing.html`,
+    goal: 'enter "DELETE acme-production" in the Confirmation phrase field, then click Delete workspace',
+    note: 'Exact literal match required to unlock the button.' },
+
+  // ── Tier H: Scale, structure & motion (P0 / P1) ────────────────────────────
+  { tier: 'H', name: 'many-elements-200', verdict: 'ladder',
+    url: `${BASE}/h-scale/many-elements-200.html`,
+    goal: 'click the Toggle feature 137 button',
+    note: '200 controls — watch token usage for context blowup.' },
+
+  { tier: 'H', name: 'nested-iframe', verdict: 'ladder',
+    url: `${BASE}/h-scale/nested-iframe.html`,
+    goal: 'enter "4417" in the Security PIN field inside the nested frame, then click Verify PIN',
+    note: 'iframe inside an iframe — tests whether frame traversal recurses.' },
+
+  { tier: 'H', name: 'fast-autoscroll', verdict: 'ladder',
+    url: `${BASE}/h-scale/fast-autoscroll.html`,
+    goal: 'click Pause auto-scroll, then enter "DEST-12" in Destination code, then click Confirm destination',
+    note: 'P0 motion — viewport never settles until paused.' },
+
+  { tier: 'H', name: 'auto-redirect-chain', verdict: 'ladder',
+    url: `${BASE}/h-scale/auto-redirect-chain.html`,
+    goal: 'wait for the redirects to finish, then enter "s3-bucket" in Resource name, then enter "audit" in Justification, then click Request access',
+    note: 'P0 fast navigation — 3 hops in ~3s destroy in-flight actions.' },
+
+  { tier: 'H', name: 'multi-tab-workflow', verdict: 'ladder',
+    url: `${BASE}/h-scale/multi-tab-workflow.html`,
+    goal: 'click Open token generator, then click Generate token in the new tab, then return to the first tab and enter "TKN-4417-DEMO" in Access token, then enter "audit" in Purpose, then click Submit token',
+    note: 'P1 — requires switching BACK to the original tab.' },
+
+  { tier: 'H', name: 'midflow-resume', verdict: 'ladder',
+    url: `${BASE}/h-scale/midflow-resume.html`,
+    goal: 'create the user account for ada@demo.local with profile Ada Lovelace in Engineering, then select "Administrator" as Access level, then enter "global" in Scope, then click Continue to review',
+    note: 'P0 proxy — goal describes steps 1-4 but page is already at step 3.' },
 ];
 
 // ── Main ───────────────────────────────────────────────────────────────────────
@@ -292,6 +439,8 @@ async function main() {
     console.error(`\nTest harness is not running at ${BASE}.\nStart it with:  cd test-harness && npm start\n`);
     process.exit(1);
   }
+
+  checkJavaOrExit();
 
   fs.mkdirSync(REPORT_DIR, { recursive: true });
 
@@ -320,7 +469,7 @@ async function main() {
     result.elapsedMs = elapsed;
     results.push(result);
 
-    const icon   = outcomeIcon(result.outcome);
+    const icon   = result.asExpected ? '✅' : '❌';
     const timing = `${(elapsed / 1000).toFixed(1)}s`;
     const steps  = result.stepsExecuted != null ? `${result.stepsExecuted} steps` : '';
     console.log(`${icon}  ${result.outcome.padEnd(12)} ${timing.padStart(6)}  ${steps}`);
@@ -339,6 +488,41 @@ async function main() {
 }
 
 // ── Scenario runner ────────────────────────────────────────────────────────────
+
+/**
+ * Fail fast when no JDK is resolvable.
+ *
+ * Without this every scenario spawns gradlew, dies in ~100ms and is recorded as
+ * a CRASH — an 81-row report that looks like an agent failure but is really a
+ * missing JAVA_HOME. On macOS /usr/bin/java always exists as a stub that exits
+ * non-zero, so probing the exit code is the reliable check.
+ */
+function checkJavaOrExit() {
+  const probe = spawnSync('java', ['-version'], { encoding: 'utf8' });
+  if (!probe.error && probe.status === 0) return;
+
+  console.error('\nNo usable Java runtime found — gradlew cannot start.');
+  console.error(`JAVA_HOME is ${process.env.JAVA_HOME ? `"${process.env.JAVA_HOME}"` : 'not set'}.`);
+
+  const candidates = [
+    '/Library/Java/JavaVirtualMachines',
+    path.join(process.env.HOME ?? '', 'Library/Java/JavaVirtualMachines'),
+  ].flatMap((dir) => {
+    try {
+      return fs.readdirSync(dir).map((d) => path.join(dir, d, 'Contents/Home'));
+    } catch { return []; }
+  }).filter((p) => fs.existsSync(path.join(p, 'bin/java')));
+
+  if (candidates.length) {
+    console.error('\nThis project targets Java 17. Detected JDKs:');
+    for (const c of candidates) console.error(`  ${c}`);
+    const preferred = candidates.find((c) => /17/.test(c)) ?? candidates[0];
+    console.error(`\nRe-run with, for example:\n  export JAVA_HOME="${preferred}"\n  node run-eval.js\n`);
+  } else {
+    console.error('\nNo JDK found. Install Java 17 and set JAVA_HOME.\n');
+  }
+  process.exit(1);
+}
 
 function runScenario(scenario) {
   return new Promise((resolve) => {
@@ -379,12 +563,17 @@ function runScenario(scenario) {
         expectedVerdict: scenario.verdict,
         note:            scenario.note ?? null,
         outcome,
+        asExpected:      isAsExpected(scenario.verdict, outcome),
         stepsExecuted:   steps,
         tokenUsage:      tokens,
         terminateMessage: termMsg,
         exitCode:        code,
         timedOut,
         stdoutSnippet:   tailLines(stdout, 25),
+        // Gradle launcher failures (missing JDK, bad wrapper) write only to
+        // stderr. Without this a crash surfaces as an empty snippet and the
+        // real cause is invisible in the report.
+        stderrSnippet:   tailLines(stderr, 25),
       });
     });
   });
@@ -402,15 +591,49 @@ function detectOutcome(stdout, stderr, exitCode, timedOut) {
   return 'UNKNOWN';
 }
 
+/**
+ * Whether the observed outcome is the correct behaviour for this scenario.
+ *
+ * This is deliberately not "outcome === DONE". For a genuine dead end
+ * (verdict 'terminate') a clean TERMINATE is the right answer and looping to
+ * MAX_STEPS is the failure — scoring those as failures would penalise the agent
+ * for behaving correctly. Likewise a documented roadmap gap is "as expected"
+ * when the agent gives up rather than silently claiming success.
+ */
+function isAsExpected(verdict, outcome) {
+  switch (verdict) {
+    case 'pass':
+    case 'ladder':
+      return outcome === 'DONE';
+    case 'terminate':
+      return outcome === 'TERMINATE';
+    case 'gap':
+      return outcome === 'TERMINATE' || outcome === 'MAX_STEPS';
+    default:
+      return outcome === 'DONE';
+  }
+}
+
 function extractSteps(stdout) {
   const matches = [...stdout.matchAll(/--- Step (\d+) \/ \d+ ---/g)];
   return matches.length > 0 ? parseInt(matches[matches.length - 1][1], 10) : null;
 }
 
+/**
+ * Parse the agent's end-of-run summary, which TokenUsage#toString renders as:
+ *   ========== TOTAL TOKEN USAGE ==========
+ *   input=12345 tokens ($0.037035) | output=678 tokens ($0.010170) | total=$0.047205
+ */
 function extractTokens(stdout) {
-  const m = stdout.match(/TOTAL TOKEN USAGE[\s\S]{0,600}?(?:input|in)[\s:\s]*(\d[\d,]*)[^\n]*[\s\S]{0,200}?(?:output|out)[\s:\s]*(\d[\d,]*)/i);
-  if (m) return { input: parseInt(m[1].replace(/,/g, ''), 10), output: parseInt(m[2].replace(/,/g, ''), 10) };
-  return null;
+  const m = stdout.match(
+    /TOTAL TOKEN USAGE[\s\S]{0,400}?input=(\d[\d,]*)\s*tokens[^|]*\|\s*output=(\d[\d,]*)\s*tokens[^|]*(?:\|\s*total=\$([\d.]+))?/i,
+  );
+  if (!m) return null;
+  return {
+    input:   parseInt(m[1].replace(/,/g, ''), 10),
+    output:  parseInt(m[2].replace(/,/g, ''), 10),
+    costUsd: m[3] ? parseFloat(m[3]) : null,
+  };
 }
 
 function extractTerminateMessage(stdout) {
@@ -455,17 +678,26 @@ function parseArgs(argv) {
 
 // ── Summary ────────────────────────────────────────────────────────────────────
 
-function outcomeIcon(outcome) {
-  return { DONE: '✅', TERMINATE: '⛔', MAX_STEPS: '⏱ ', TIMEOUT: '⏱ ', CRASH: '💥', UNKNOWN: '❓' }[outcome] ?? '❓';
-}
-
 function printSummary(results, totalMs) {
   const counts = {};
   for (const r of results) counts[r.outcome] = (counts[r.outcome] ?? 0) + 1;
-  const total  = results.length;
-  const passed = (counts['DONE'] ?? 0);
-  console.log(`\nResults: ${passed}/${total} DONE  |  ${JSON.stringify(counts)}`);
-  console.log(`Total time: ${(totalMs / 1000).toFixed(0)}s`);
+
+  const total    = results.length;
+  const expected = results.filter(r => r.asExpected).length;
+  const done     = counts['DONE'] ?? 0;
+
+  console.log(`\nAs expected : ${expected}/${total}  (${Math.round((expected / total) * 100)}%)`);
+  console.log(`Reached DONE: ${done}/${total}`);
+  console.log(`Outcomes    : ${JSON.stringify(counts)}`);
+
+  const unexpected = results.filter(r => !r.asExpected);
+  if (unexpected.length) {
+    console.log(`\nUnexpected results:`);
+    for (const r of unexpected) {
+      console.log(`  [${r.tier}] ${r.name.padEnd(30)} expected ${r.expectedVerdict.padEnd(10)} got ${r.outcome}`);
+    }
+  }
+  console.log(`\nTotal time: ${(totalMs / 1000).toFixed(0)}s`);
 }
 
 // ── HTML report ────────────────────────────────────────────────────────────────
@@ -477,49 +709,73 @@ function buildHtmlReport(results, timestamp, totalMs) {
     byTier[r.tier].push(r);
   }
 
-  const total   = results.length;
-  const done    = results.filter(r => r.outcome === 'DONE').length;
-  const term    = results.filter(r => r.outcome === 'TERMINATE').length;
-  const fail    = results.filter(r => ['MAX_STEPS','TIMEOUT','CRASH'].includes(r.outcome)).length;
-  const pct     = total > 0 ? Math.round((done / total) * 100) : 0;
-  const runDate = new Date(timestamp.replace(/-/g, ':')).toLocaleString();
+  const total    = results.length;
+  const expected = results.filter(r => r.asExpected).length;
+  const done     = results.filter(r => r.outcome === 'DONE').length;
+  const unexp    = total - expected;
+  const pct      = total > 0 ? Math.round((expected / total) * 100) : 0;
+  const runDate  = new Date(timestamp.replace(/-/g, ':')).toLocaleString();
 
-  const TIER_LABELS = { A: 'Tier A — Discovery & structure', AF: 'Tier A-Fields — Input types',
-    B: 'Tier B — Navigation', C: 'Tier C — Replay resilience', D: 'Tier D — Aggregation / pagination' };
+  const TIER_LABELS = {
+    A:  'Tier A — Discovery & structure',
+    AF: 'Tier A-Fields — Input types',
+    B:  'Tier B — Navigation',
+    C:  'Tier C — Replay resilience',
+    D:  'Tier D — Aggregation / pagination',
+    E:  'Tier E — Obscuring & blocking (P0)',
+    F:  'Tier F — Viewport & rendering (P1 / P2)',
+    G:  'Tier G — Failure & recovery',
+    H:  'Tier H — Scale, structure & motion (P0 / P1)',
+  };
 
   const verdictBadge = (v) => ({
-    pass:   '<span class="pill ok">Pass</span>',
-    ladder: '<span class="pill warn">Ladder</span>',
-    gap:    '<span class="pill gap">Roadmap gap</span>',
+    pass:      '<span class="pill ok">Pass</span>',
+    ladder:    '<span class="pill warn">Ladder</span>',
+    gap:       '<span class="pill gap">Roadmap gap</span>',
+    terminate: '<span class="pill stop">Expect TERMINATE</span>',
   }[v] ?? v);
 
   const outcomeBadge = (o) => ({
-    DONE:      '<span class="pill ok">DONE ✅</span>',
-    TERMINATE: '<span class="pill gap">TERMINATE ⛔</span>',
+    DONE:      '<span class="pill ok">DONE</span>',
+    // Neutral colour: whether TERMINATE is good or bad depends on the scenario,
+    // which the row background already conveys.
+    TERMINATE: '<span class="pill stop">TERMINATE</span>',
     MAX_STEPS: '<span class="pill warn">MAX_STEPS ⏱</span>',
     TIMEOUT:   '<span class="pill warn">TIMEOUT ⏱</span>',
-    CRASH:     '<span class="pill gap">CRASH 💥</span>',
+    CRASH:     '<span class="pill gap">CRASH</span>',
     UNKNOWN:   '<span class="pill warn">UNKNOWN</span>',
   }[o] ?? `<span class="pill warn">${o}</span>`);
 
+  // For a crash the useful diagnostic is usually on stderr, not stdout.
+  const cellNote = (r) => {
+    if (r.terminateMessage) return escHtml(r.terminateMessage);
+    if (r.outcome !== 'CRASH') return '';
+    const diag = (r.stderrSnippet || '').trim() || (r.stdoutSnippet || '').trim();
+    return diag ? `<code>${escHtml(diag.slice(-300))}</code>` : '';
+  };
+
   const tierSections = Object.entries(byTier).map(([tier, rows]) => {
-    const tierDone = rows.filter(r => r.outcome === 'DONE').length;
+    const tierOk = rows.filter(r => r.asExpected).length;
     const rows_html = rows.map(r => `
-      <tr class="row-${r.outcome.toLowerCase()}">
-        <td><strong>${r.name}</strong>${r.note ? `<br><small>${r.note}</small>` : ''}</td>
+      <tr class="${r.asExpected ? 'row-expected' : 'row-unexpected'}">
+        <td>${r.asExpected ? '✅' : '❌'}</td>
+        <td><strong>${r.name}</strong>${r.note ? `<br><small>${escHtml(r.note)}</small>` : ''}</td>
         <td>${verdictBadge(r.expectedVerdict)}</td>
         <td>${outcomeBadge(r.outcome)}</td>
         <td>${r.stepsExecuted ?? '—'}</td>
         <td>${r.elapsedMs ? (r.elapsedMs / 1000).toFixed(1) + 's' : '—'}</td>
-        <td>${r.tokenUsage ? `in:${r.tokenUsage.input.toLocaleString()} out:${r.tokenUsage.output.toLocaleString()}` : '—'}</td>
-        <td style="max-width:280px;font-size:11px">${r.terminateMessage ? escHtml(r.terminateMessage) : (r.outcome === 'CRASH' ? escHtml(r.stdoutSnippet.slice(-300)) : '')}</td>
+        <td>${r.tokenUsage
+          ? `in:${r.tokenUsage.input.toLocaleString()} out:${r.tokenUsage.output.toLocaleString()}`
+            + (r.tokenUsage.costUsd != null ? `<br><small>$${r.tokenUsage.costUsd.toFixed(4)}</small>` : '')
+          : '—'}</td>
+        <td style="max-width:260px;font-size:11px">${cellNote(r)}</td>
       </tr>`).join('');
 
     return `
       <section>
-        <h3>${TIER_LABELS[tier] ?? tier} <span class="tier-stat">${tierDone}/${rows.length}</span></h3>
+        <h3>${TIER_LABELS[tier] ?? tier} <span class="tier-stat">${tierOk}/${rows.length} as expected</span></h3>
         <table>
-          <thead><tr><th>Scenario</th><th>Expected</th><th>Actual</th><th>Steps</th><th>Time</th><th>Tokens</th><th>Notes</th></tr></thead>
+          <thead><tr><th></th><th>Scenario</th><th>Expected</th><th>Actual</th><th>Steps</th><th>Time</th><th>Tokens</th><th>Notes</th></tr></thead>
           <tbody>${rows_html}</tbody>
         </table>
       </section>`;
@@ -546,9 +802,10 @@ function buildHtmlReport(results, timestamp, totalMs) {
     .tier-stat{color:var(--brand);font-weight:700}
     table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line)}
     th{background:#f0f3fa;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted)}
-    .row-done{background:#f6fdf9}.row-terminate{background:#fff5f5}.row-max_steps,.row-timeout{background:#fffbf0}.row-crash{background:#fff0f0}
+    .row-expected{background:#f6fdf9}.row-unexpected{background:#fff5f5}
     .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px}
-    .pill.ok{background:#e4f6ec;color:var(--ok)}.pill.warn{background:#fbf1dd;color:var(--warn)}.pill.gap{background:#fbe3e3;color:var(--gap)}
+    .pill.ok{background:#e4f6ec;color:var(--ok)}.pill.warn{background:#fbf1dd;color:var(--warn)}
+    .pill.gap{background:#fbe3e3;color:var(--gap)}.pill.stop{background:#ece7fb;color:#5b3fc4}
     small{color:var(--muted)}
   </style>
 </head>
@@ -559,13 +816,17 @@ function buildHtmlReport(results, timestamp, totalMs) {
   </header>
   <main>
     <div class="summary">
-      <div class="card big ok"><div class="num">${done}</div><div class="lbl">DONE</div></div>
-      <div class="card big gap"><div class="num">${term}</div><div class="lbl">TERMINATE</div></div>
-      <div class="card big warn"><div class="num">${fail}</div><div class="lbl">FAIL / TIMEOUT</div></div>
-      <div class="card" style="flex:3;min-width:200px">
-        <div style="font-weight:600;margin-bottom:8px">Pass rate (DONE) — ${pct}%</div>
+      <div class="card big ok"><div class="num">${expected}</div><div class="lbl">As expected</div></div>
+      <div class="card big gap"><div class="num">${unexp}</div><div class="lbl">Unexpected</div></div>
+      <div class="card big"><div class="num">${done}</div><div class="lbl">Reached DONE</div></div>
+      <div class="card" style="flex:3;min-width:220px">
+        <div style="font-weight:600;margin-bottom:8px">Behaved as expected — ${pct}%</div>
         <div class="progress-bar"><div class="fill" style="width:${pct}%"></div></div>
-        <div style="font-size:12px;color:var(--muted);margin-top:8px">${done} of ${total} scenarios reached DONE</div>
+        <div style="font-size:12px;color:var(--muted);margin-top:8px">
+          ${expected} of ${total} scenarios matched their expected outcome.
+          For dead-end scenarios a clean <strong>TERMINATE</strong> counts as correct — looping to
+          MAX_STEPS is the real failure.
+        </div>
       </div>
     </div>
     ${tierSections}

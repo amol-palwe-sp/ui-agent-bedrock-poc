@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Server error — Failure</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Server error (500)</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Expected outcome: TERMINATE.</strong> Submitting navigates to a real HTTP 500
+      response. There is no path to completing the goal, so the agent should stop rather than retry indefinitely.</div>
+    <h2>Backend failure <span class="pill gap">Expect TERMINATE</span></h2>
+    <p class="subtitle">Fill the form and submit — the backend returns 500.</p>
+    <label for="tenant">Tenant name</label>
+    <input type="text" id="tenant" aria-label="Tenant name" />
+    <div style="margin-top:18px;">
+      <button onclick="location.href='/api/error/500'" aria-label="Provision tenant">Provision tenant</button>
+    </div>
+  </div></main>
+</body>
+</html>

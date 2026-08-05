@@ -1,6 +1,7 @@
 package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
+import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
@@ -10,6 +11,9 @@ import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 import com.sailpoint.poc.uiagent.video.VideoToGoalPrompt;
+import com.sailpoint.poc.uiagent.video.relevance.RelevanceResponse;
+import com.sailpoint.poc.uiagent.video.relevance.RelevanceResult;
+import com.sailpoint.poc.uiagent.video.relevance.VideoRelevanceGate;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import org.apache.commons.fileupload.FileItem;
@@ -78,6 +82,7 @@ public final class GenerateHandler implements HttpHandler {
             String  overrideUrl  = null;
             Integer maxFrames    = null;
             boolean evalEnabled  = true;
+            boolean force        = false;
 
             for (FileItem item : items) {
                 if (!item.isFormField() && "video".equals(item.getFieldName())) {
@@ -97,6 +102,7 @@ public final class GenerateHandler implements HttpHandler {
                             catch (NumberFormatException ignored) {}
                         }
                         case "evalEnabled" -> evalEnabled = !"false".equalsIgnoreCase(item.getString().trim());
+                        case "force"       -> force = "true".equalsIgnoreCase(item.getString().trim());
                     }
                 }
             }
@@ -129,6 +135,31 @@ public final class GenerateHandler implements HttpHandler {
             }
 
             push("LOG:INFO:Extracted " + frames.size() + " frames");
+
+            // ── Relevance triage ───────────────────────────────────────────────
+            // Runs before the full-frame call so an unusable video costs a fraction of a
+            // generation. Skipped entirely when the user has chosen to analyse anyway.
+            RelevanceResult relevance = RelevanceResult.skipped();
+            if (force) {
+                push("LOG:WARN:Relevance check overridden by user — analysing anyway");
+            } else {
+                push("LOG:INFO:Checking whether the video shows a UI workflow...");
+                relevance = new VideoRelevanceGate(config.relevance(), config.bedrock())
+                        .evaluate(frames);
+
+                if (relevance.isRejected()) {
+                    push("LOG:ERROR:Video rejected — " + RelevanceResponse.logLine(relevance));
+                    push("STATUS:ready");
+                    sendJson(ex, 200, RelevanceResponse.rejectionJson(relevance, frames.size()));
+                    return;
+                }
+                if (relevance.isUncertain()) {
+                    push("LOG:WARN:" + relevance.reason());
+                } else {
+                    push("LOG:SUCCESS:Video looks like a UI workflow — continuing");
+                }
+            }
+
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
             push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
 
@@ -187,7 +218,8 @@ public final class GenerateHandler implements HttpHandler {
                 // Do not emit DONE here — generate uses fetch; DONE is for /api/run only.
 
                 String json = buildResultJson(
-                        extraction, result, frames.size(), confidence, navigationGoal, targetUrl);
+                        extraction, result, frames.size(), confidence, navigationGoal, targetUrl,
+                        relevance);
                 sendJson(ex, 200, json);
             }
 
@@ -252,7 +284,8 @@ public final class GenerateHandler implements HttpHandler {
             int frameCount,
             ConfidenceResult confidence,
             String navigationGoal,
-            String targetUrl) {
+            String targetUrl,
+            RelevanceResult relevance) {
 
         List<String> steps  = extraction.steps();
         List<String> issues = extraction.issues();
@@ -277,10 +310,16 @@ public final class GenerateHandler implements HttpHandler {
             sb.append(quoted(issues.get(i)));
         }
         sb.append("]");
-        sb.append(",\"inputTokens\":").append(result.usage().inputTokens());
-        sb.append(",\"outputTokens\":").append(result.usage().outputTokens());
-        sb.append(",\"costUsd\":").append(result.usage().totalCostUsd());
+        // Totals include the triage call so the reported cost matches what was actually spent.
+        TokenUsage total = result.usage().add(relevance.tokenUsage());
+        sb.append(",\"inputTokens\":").append(total.inputTokens());
+        sb.append(",\"outputTokens\":").append(total.outputTokens());
+        sb.append(",\"costUsd\":").append(total.totalCostUsd());
         sb.append(",\"frameCount\":").append(frameCount);
+        sb.append(",\"status\":\"ACCEPTED\"");
+        if (relevance.isUncertain()) {
+            sb.append(",\"relevanceWarning\":").append(quoted(relevance.reason()));
+        }
         // Confidence evaluation (best-effort — null when eval was skipped or failed)
         if (confidence != null) {
             sb.append(",\"confidenceScore\":").append(confidence.confidenceScore());

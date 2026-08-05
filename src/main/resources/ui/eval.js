@@ -456,7 +456,7 @@
     var judge    = c.judgeScores  || {};
     var hsteps   = c.hallucinatedSteps || [];
     var msteps   = c.missingSteps      || [];
-    var leaks    = c.credentialLeaks   || [];
+    var missingPlaceholders = c.missingPlaceholders || [];
     var issues   = c.issues            || [];
 
     var tr = document.createElement('tr');
@@ -516,9 +516,9 @@
       html += '</div>';
     }
 
-    if (leaks.length > 0) {
-      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px; color:var(--error);">🔑 Credential leaks:</strong> ' +
-        leaks.map(function (s) { return '<code>' + esc(s) + '</code>'; }).join(', ') + '</div>';
+    if (missingPlaceholders.length > 0) {
+      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px; color:var(--error);">🔑 Missing placeholders:</strong> ' +
+        missingPlaceholders.map(function (s) { return '<code>' + esc(s) + '</code>'; }).join(', ') + '</div>';
     }
 
     if (issues.length > 0) {

@@ -57,7 +57,13 @@ public record VideoConfig(
         double selectionMaxGapSeconds,
         double selectionSimilarityThreshold,
         double urlBarMandatoryThreshold,
-        double selectionMinGapSeconds) {
+        double selectionMinGapSeconds,
+        // REQ-FS-5.1: uniform temporal coverage floor. Guarantees at least one frame per
+        // interval across the whole timeline (incl. the trailing region after the last
+        // "busy" frame) regardless of score, so slow/low-visual-delta activity such as
+        // typing into a field is never dropped. Set to 0 to disable and fall back to the
+        // score-based max-gap net only.
+        double selectionCoverageIntervalSeconds) {
 
     public static VideoConfig defaults() {
         return new VideoConfig(
@@ -69,7 +75,7 @@ public record VideoConfig(
                 5, 0.20, 4, 0.1,
                 4, 2, 2.0,
                 0.3, 1.5, 0.3,
-                8.0, 0.92, 0.30, 0.5);
+                8.0, 0.92, 0.30, 0.5, 2.5);
     }
 
     public VideoConfig withDebugFramesDir(String dir) {
@@ -85,7 +91,7 @@ public record VideoConfig(
                 patternElementMinClusterSize, patternElementPersistFrames, patternElementBonus,
                 patternScrollThreshold, patternScrollEndBonus, patternScrollMidPenalty,
                 selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold,
-                selectionMinGapSeconds);
+                selectionMinGapSeconds, selectionCoverageIntervalSeconds);
     }
 
     /** Override max frames (UI / CLI). */
@@ -102,7 +108,7 @@ public record VideoConfig(
                 patternElementMinClusterSize, patternElementPersistFrames, patternElementBonus,
                 patternScrollThreshold, patternScrollEndBonus, patternScrollMidPenalty,
                 selectionMaxGapSeconds, selectionSimilarityThreshold, urlBarMandatoryThreshold,
-                selectionMinGapSeconds);
+                selectionMinGapSeconds, selectionCoverageIntervalSeconds);
     }
 
     /** Legacy constructor mapping for {@link com.sailpoint.poc.uiagent.video.VideoFrameExtractor}. */
@@ -127,6 +133,6 @@ public record VideoConfig(
                 d.patternElementMinClusterSize(), d.patternElementPersistFrames(), d.patternElementBonus(),
                 d.patternScrollThreshold(), d.patternScrollEndBonus(), d.patternScrollMidPenalty(),
                 d.selectionMaxGapSeconds(), d.selectionSimilarityThreshold(), d.urlBarMandatoryThreshold(),
-                d.selectionMinGapSeconds());
+                d.selectionMinGapSeconds(), d.selectionCoverageIntervalSeconds());
     }
 }

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Layout shift — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>.injected{background:#fff4d6;border:1px solid #f0d089;border-radius:8px;padding:14px;margin:12px 0}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Layout shift on click</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Element moves mid-interaction <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">A late-loading notice is injected above the buttons ~2.5s after load, pushing them down.
+      A click whose coordinates were captured before the shift lands on the wrong control — this is the classic
+      cumulative-layout-shift failure. The agent must re-observe after the shift.</p>
+
+    <div id="slot"></div>
+
+    <label for="amount">Amount</label>
+    <input type="text" id="amount" aria-label="Amount" />
+
+    <div class="toolbar">
+      <button onclick="hit('Cancel')" class="secondary">Cancel transfer</button>
+      <button onclick="hit('Send')">Send transfer</button>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+  </div></main>
+  <script>
+    // Inject a banner after a delay so the buttons shift downward.
+    setTimeout(()=>{
+      const d=document.createElement('div');
+      d.className='injected';
+      d.innerHTML='<strong>Scheduled maintenance</strong><br>Transfers may be delayed this evening between 22:00 and 23:30. '
+                + 'Please review your details carefully before submitting.';
+      document.getElementById('slot').appendChild(d);
+    }, 2500);
+    function hit(which){
+      const o=document.getElementById('ok');
+      o.textContent = which === 'Send' ? 'Transfer sent.' : 'Transfer cancelled (wrong button — layout shift hit).';
+      o.style.display='block';
+    }
+  </script>
+</body>
+</html>

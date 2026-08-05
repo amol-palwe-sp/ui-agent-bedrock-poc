@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Confirm by typing — Failure</title><link rel="stylesheet" href="/styles.css" />
+  <style>.danger{background:var(--gap)}.danger:disabled{opacity:.45}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Confirm by typing</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Exact-match confirmation <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Destructive-action pattern used by GitHub, AWS and others: the confirm button unlocks only
+      when the user types an exact literal string. Tests whether the agent reproduces the required text precisely,
+      including case, rather than paraphrasing it.</p>
+
+    <p>To delete the workspace <strong>acme-production</strong>, type
+       <code>DELETE acme-production</code> in the field below.</p>
+
+    <label for="confirmText">Confirmation phrase</label>
+    <input type="text" id="confirmText" aria-label="Confirmation phrase" oninput="check()" autocomplete="off" />
+
+    <div style="margin-top:18px;">
+      <button id="delBtn" class="danger" disabled onclick="document.getElementById('ok').style.display='block'"
+              aria-label="Delete workspace">Delete workspace</button>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Workspace deleted.</div>
+  </div></main>
+  <script>
+    const REQUIRED = 'DELETE acme-production';
+    function check(){
+      document.getElementById('delBtn').disabled =
+        document.getElementById('confirmText').value !== REQUIRED;
+    }
+  </script>
+</body>
+</html>

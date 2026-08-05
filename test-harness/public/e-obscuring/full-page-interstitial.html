@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Full-page interstitial — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .interstitial{position:fixed;inset:0;background:linear-gradient(135deg,#2f6fed,#1a3f9e);color:#fff;
+      z-index:200;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px}
+    .interstitial h2{font-size:30px;margin:0 0 12px}
+    .interstitial p{max-width:480px;opacity:.9}
+    /* The close control is small and visually de-emphasised, top-right. */
+    .closeX{position:absolute;top:18px;right:22px;background:transparent;color:#cfe0ff;font-size:22px;
+      border:1px solid rgba(255,255,255,.35);border-radius:50%;width:38px;height:38px;line-height:1;cursor:pointer}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Full-page interstitial</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Whole-viewport blocker <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">An interstitial covers the entire viewport on load. Unlike a modal it has no obvious
+      primary dismiss button — only a small ✕ in the corner. The agent must find and use it before anything below is reachable.</p>
+    <label for="q">Search users</label>
+    <input type="search" id="q" aria-label="Search users" />
+    <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Search</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Search executed.</div>
+  </div></main>
+
+  <div class="interstitial" id="wall" role="dialog" aria-label="Announcement">
+    <button class="closeX" onclick="document.getElementById('wall').remove()" aria-label="Close">&times;</button>
+    <h2>Introducing Workspace 2.0</h2>
+    <p>A faster, cleaner way to manage your directory. Explore the new experience today.</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Long page scroll — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>.sect{border:1px solid var(--line);border-radius:8px;padding:18px;margin:14px 0;background:var(--card)}</style>
+</head>
+<body>
+  <header class="appbar"><h1>Long page (many scrolls)</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Deep scroll target <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">A 20-section form where the required field sits in the last section. Because the scraper
+      is viewport-only by default, the agent must issue repeated SCROLL actions and re-observe — this stresses
+      the anti-oscillation guard as much as the scrolling itself.</p>
+    <div id="sections"></div>
+    <div class="sect" style="border-color:var(--brand)">
+      <h3>Section 20 — Final approval</h3>
+      <label for="finalCode">Final approval code</label>
+      <input type="text" id="finalCode" aria-label="Final approval code" />
+      <div style="margin-top:14px;"><button onclick="document.getElementById('ok').style.display='block'">Submit approval</button></div>
+      <div id="ok" class="done-banner" style="display:none;margin-top:14px;">Approval submitted.</div>
+    </div>
+  </div></main>
+  <script>
+    const host=document.getElementById('sections');
+    for(let i=1;i<=19;i++){
+      const d=document.createElement('div');
+      d.className='sect';
+      d.innerHTML=`<h3>Section ${i} — Optional details</h3>
+        <label for="f${i}">Reference ${i}</label>
+        <input type="text" id="f${i}" aria-label="Reference ${i}" />
+        <p class="subtitle" style="margin-top:10px">This section is optional and can be skipped.</p>`;
+      host.appendChild(d);
+    }
+  </script>
+</body>
+</html>

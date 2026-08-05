@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Browser zoom — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* CSS zoom is applied at runtime from ?level=. This emulates browser zoom
+       without needing a deviceScaleFactor option in the POC's BrowserConfig:
+       element bounding boxes scale, so coordinate-based clicks must account for it. */
+    #zoomRoot{transform-origin:top left}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Browser zoom</h1><a href="/">Catalog</a></header>
+  <main>
+    <div id="zoomRoot">
+      <div class="card">
+        <h2>Scaled rendering <span class="pill warn">Ladder</span> <span id="lvl" class="pill ok"></span></h2>
+        <p class="subtitle">The page content is scaled via CSS transform to emulate browser zoom. Element
+          coordinates and sizes all shift, which stresses the coordinate-click fallback in the action ladder.
+          Append <code>?level=125</code>, <code>150</code>, or <code>200</code>.</p>
+        <label for="policy">Policy name</label>
+        <input type="text" id="policy" aria-label="Policy name" />
+        <label for="owner">Owner</label>
+        <select id="owner" aria-label="Owner"><option>Choose…</option><option>Ada</option><option>Grace</option></select>
+        <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Create policy</button></div>
+        <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Policy created.</div>
+      </div>
+    </div>
+  </main>
+  <script>
+    const level = parseInt(new URLSearchParams(location.search).get('level'), 10) || 100;
+    const scale = level / 100;
+    document.getElementById('zoomRoot').style.transform = `scale(${scale})`;
+    // Reserve layout space so the scaled content is fully scrollable.
+    document.getElementById('zoomRoot').style.width = `${100 / scale}%`;
+    document.getElementById('lvl').textContent = level + '% zoom';
+  </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Runtime theme toggle — Viewport</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Runtime theme toggle</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Theme switches mid-flow <span class="pill ok">Pass</span></h2>
+    <p class="subtitle">The agent must switch the theme to dark, then complete the form in the new colour scheme.
+      Every screenshot after the toggle looks completely different while the DOM is unchanged — a pure
+      vision-vs-structure test.</p>
+    <div class="toolbar">
+      <button onclick="setTheme('dark')" aria-label="Switch to dark theme">Dark theme</button>
+      <button class="secondary" onclick="setTheme('light')" aria-label="Switch to light theme">Light theme</button>
+      <span class="status" id="cur">Current: light</span>
+    </div>
+    <label for="title">Report title</label>
+    <input type="text" id="title" aria-label="Report title" />
+    <div style="margin-top:18px;"><button onclick="document.getElementById('ok').style.display='block'">Generate report</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Report generated.</div>
+  </div></main>
+  <script>
+    function setTheme(t){
+      document.body.classList.toggle('theme-dark', t === 'dark');
+      document.getElementById('cur').textContent = 'Current: ' + t;
+    }
+  </script>
+</body>
+</html>

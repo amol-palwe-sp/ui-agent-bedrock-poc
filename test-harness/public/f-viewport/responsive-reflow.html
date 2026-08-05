@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Responsive reflow — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .cols{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px}
+    .side{display:block}
+    .burger{display:none}
+    /* Below 900px the layout collapses and the side nav is replaced by a burger menu,
+       so the same logical control has a different position and shape. */
+    @media (max-width: 900px){
+      .cols{grid-template-columns:1fr}
+      .side{display:none}
+      .burger{display:inline-block}
+    }
+    .vpinfo{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:var(--muted)}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Responsive reflow</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Layout changes with viewport <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Run this at different <code>browser.viewport.width</code> values. Above 900px the actions sit
+      in a side panel; below 900px they collapse behind a burger menu — the same goal needs a different path.</p>
+    <p class="vpinfo" id="vp"></p>
+
+    <div class="cols">
+      <div>
+        <label for="user">Username</label>
+        <input type="text" id="user" aria-label="Username" />
+      </div>
+      <div>
+        <label for="role">Role</label>
+        <select id="role" aria-label="Role"><option>Viewer</option><option>Editor</option><option>Admin</option></select>
+      </div>
+      <div class="side">
+        <label>Actions</label>
+        <button onclick="save()" aria-label="Save user">Save user</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px;">
+      <button class="burger" onclick="openMenu()" aria-label="Open actions menu">☰ Actions</button>
+      <div id="menu" style="display:none;margin-top:10px;">
+        <button onclick="save()" aria-label="Save user">Save user</button>
+      </div>
+    </div>
+
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">User saved.</div>
+  </div></main>
+  <script>
+    function show(){ document.getElementById('vp').textContent =
+      `viewport: ${window.innerWidth} x ${window.innerHeight}  |  mode: ${window.innerWidth<=900?'collapsed (burger)':'wide (side panel)'}`; }
+    function openMenu(){ document.getElementById('menu').style.display='block'; }
+    function save(){ document.getElementById('ok').style.display='block'; }
+    show(); window.addEventListener('resize', show);
+  </script>
+</body>
+</html>

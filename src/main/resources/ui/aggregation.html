@@ -83,6 +83,19 @@
           <span id="btnGenerateSpinner" class="spinner hidden"></span>
         </button>
 
+        <div class="rejection-panel hidden" id="rejectionPanel" role="alert">
+          <div class="rejection-title">
+            <span aria-hidden="true">🚫</span>
+            <span id="rejectionHeadline">Video rejected</span>
+          </div>
+          <p class="rejection-reason" id="rejectionReason"></p>
+          <p class="rejection-suggestion" id="rejectionSuggestion"></p>
+          <div class="rejection-actions">
+            <button class="btn btn-ghost" id="btnForceGenerate">Analyze anyway</button>
+            <span class="rejection-confidence" id="rejectionConfidence"></span>
+          </div>
+        </div>
+
       </div>
     </section>
 

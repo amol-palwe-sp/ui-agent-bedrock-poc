@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Validation errors — Failure</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .err{color:var(--gap);font-size:12px;margin-top:4px;display:none}
+    .err.show{display:block}
+    input.invalid{border-color:var(--gap);background:#fff8f8}
+    .summary{background:#fbe3e3;border:1px solid #eebcbc;color:var(--gap);padding:12px 14px;border-radius:8px;
+      margin-bottom:14px;display:none}
+    .summary.show{display:block}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Validation errors</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Read the error, then correct it <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">The first submit always fails validation: the email must end in
+      <code>@corp.example</code> and the employee ID must be exactly 6 digits. The agent has to read the error
+      messages and retry with corrected values rather than resubmitting the same input.</p>
+
+    <div class="summary" id="summary">Please correct the highlighted fields below.</div>
+
+    <label for="email">Work email</label>
+    <input type="email" id="email" aria-label="Work email" placeholder="name@corp.example" />
+    <div class="err" id="emailErr">Email must be on the @corp.example domain.</div>
+
+    <label for="empId">Employee ID</label>
+    <input type="text" id="empId" aria-label="Employee ID" placeholder="6 digits" />
+    <div class="err" id="empIdErr">Employee ID must be exactly 6 digits.</div>
+
+    <div style="margin-top:18px;"><button onclick="submitForm()">Create employee</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Employee created.</div>
+  </div></main>
+  <script>
+    function submitForm(){
+      const email = document.getElementById('email');
+      const empId = document.getElementById('empId');
+      const emailOk = /@corp\.example$/.test(email.value.trim());
+      const idOk    = /^\d{6}$/.test(empId.value.trim());
+
+      document.getElementById('emailErr').classList.toggle('show', !emailOk);
+      document.getElementById('empIdErr').classList.toggle('show', !idOk);
+      email.classList.toggle('invalid', !emailOk);
+      empId.classList.toggle('invalid', !idOk);
+      document.getElementById('summary').classList.toggle('show', !(emailOk && idOk));
+
+      if (emailOk && idOk) document.getElementById('ok').style.display = 'block';
+    }
+  </script>
+</body>
+</html>

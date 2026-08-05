@@ -70,6 +70,12 @@
   const btnCopyMetrics         = document.getElementById('btnCopyMetrics');
   const metricsTableHead       = document.getElementById('metricsTableHead');
   const metricsTableBody       = document.getElementById('metricsTableBody');
+  const rejectionPanel         = document.getElementById('rejectionPanel');
+  const rejectionHeadline      = document.getElementById('rejectionHeadline');
+  const rejectionReason        = document.getElementById('rejectionReason');
+  const rejectionSuggestion    = document.getElementById('rejectionSuggestion');
+  const rejectionConfidence    = document.getElementById('rejectionConfidence');
+  const btnForceGenerate       = document.getElementById('btnForceGenerate');
 
   // ── Init ───────────────────────────────────────────────────────────────────
   document.addEventListener('DOMContentLoaded', function () {
@@ -78,7 +84,13 @@
     initRunMode();
     setStatus('ready');
 
-    btnGenerate.addEventListener('click', handleGenerate);
+    btnGenerate.addEventListener('click', function () { handleGenerate(false); });
+    if (btnForceGenerate) {
+      btnForceGenerate.addEventListener('click', function () {
+        hideRejectionPanel();
+        handleGenerate(true);
+      });
+    }
     btnRun.addEventListener('click', handleRun);
     btnStop.addEventListener('click', handleStop);
     if (evalToggle) {
@@ -134,16 +146,18 @@
     fileSize.textContent = formatFileSize(file.size);
     fileInfo.classList.remove('hidden');
     btnGenerate.disabled = false;
+    hideRejectionPanel();
   }
 
   // ── Generate ───────────────────────────────────────────────────────────────
-  function handleGenerate() {
+  function handleGenerate(force) {
     if (isGenerating || !uploadedFile) return;
     isGenerating = true;
     setStatus('generating');
     btnGenerate.disabled = true;
     btnGenerateText.textContent = 'Generating...';
     btnGenerateSpinner.classList.remove('hidden');
+    hideRejectionPanel();
     clearLog();
 
     const form = new FormData();
@@ -152,6 +166,7 @@
     form.append('maxFrames', maxFramesInput.value);
     if (saveDebugFrames.checked) form.append('debugFrames', 'true');
     form.append('evalEnabled', evalToggle && evalToggle.checked ? 'true' : 'false');
+    if (force) form.append('force', 'true');
 
     fetch('/api/generate', { method: 'POST', body: form })
       .then(function (r) { return r.json(); })
@@ -161,6 +176,12 @@
           setStatus('error');
           return;
         }
+        if (data.status === 'REJECTED') {
+          showRejectionPanel(data.rejection || {});
+          setStatus('ready');
+          return;
+        }
+        if (data.relevanceWarning) showError(data.relevanceWarning);
         generatedUrl = (data.url && data.url.trim())
             || (data.targetUrl && data.targetUrl.trim())
             || overrideUrl.value.trim();
@@ -1085,6 +1106,34 @@
                               + ' | Out: ' + (outputTok || 0).toLocaleString()
                               + ' | Cost: $' + (cost || 0).toFixed(4);
     execTokenInfo.classList.remove('hidden');
+  }
+
+  const REJECTION_HEADLINES = {
+    NOT_A_SCREEN_RECORDING: 'This is not a screen recording',
+    NOT_A_WEB_UI:           'This is not a web application',
+    OUT_OF_DOMAIN:          'This workflow is out of scope',
+    NO_INTERACTIONS:        'No interactions were recorded',
+    UNREADABLE:             'The recording is too unclear to read'
+  };
+
+  function showRejectionPanel(rejection) {
+    if (!rejectionPanel) return;
+    rejectionHeadline.textContent =
+      REJECTION_HEADLINES[rejection.category] || 'Video rejected';
+    rejectionReason.textContent = rejection.reason || '';
+    rejectionSuggestion.textContent = rejection.suggestion || '';
+    rejectionConfidence.textContent = rejection.confidence
+      ? 'Confidence ' + rejection.confidence + '%'
+      : '';
+    rejectionPanel.classList.remove('hidden');
+    rejectionPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!sectionLog.classList.contains('locked')) {
+      appendLog('Video rejected: ' + (rejection.reason || rejection.category), 'error');
+    }
+  }
+
+  function hideRejectionPanel() {
+    if (rejectionPanel) rejectionPanel.classList.add('hidden');
   }
 
   function showError(msg) {

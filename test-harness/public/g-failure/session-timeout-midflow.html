@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Session timeout — Failure</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Session timeout mid-flow</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Step 1 — Sign in <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">This flow issues a session that expires after <strong>12 seconds</strong>. A slow multi-step
+      run will be bounced to a re-authentication page part-way through, forcing the agent to notice the redirect
+      and recover instead of blindly continuing.</p>
+    <form method="POST" action="/timeout-login">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" aria-label="Email" value="test.user@demo.local" />
+      <label for="password">Password</label>
+      <input type="password" id="password" name="password" aria-label="Password" />
+      <div style="margin-top:18px;"><button type="submit">Sign in</button></div>
+    </form>
+  </div></main>
+</body>
+</html>

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Multi-tab workflow — Scale</title><link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header class="appbar"><h1>Multi-tab workflow</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <div class="gap-note"><strong>Multi-tab (P1):</strong> unlike the single-popup scenario, this requires
+      <em>returning</em> to the original tab. The agent opens a token generator in a second tab, reads the value
+      there, then must come back to this tab to use it. Popup-following alone is not enough — it has to switch back.</div>
+    <h2>Cross-tab value transfer <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">1. Open the token generator. 2. Click Generate in that tab and read the token.
+      3. Return here, paste it, and submit.</p>
+
+    <div class="toolbar">
+      <button onclick="window.open('/h-scale/token-generator.html','tokenTab','width=520,height=420')"
+              aria-label="Open token generator">Open token generator</button>
+    </div>
+
+    <label for="token">Access token</label>
+    <input type="text" id="token" aria-label="Access token" placeholder="Paste the generated token" />
+
+    <label for="purpose">Purpose</label>
+    <input type="text" id="purpose" aria-label="Purpose" />
+
+    <div style="margin-top:18px;"><button onclick="submitToken()">Submit token</button></div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;"></div>
+  </div></main>
+  <script>
+    // The token is deterministic so the expected value is always the same.
+    const EXPECTED = 'TKN-4417-DEMO';
+    function submitToken(){
+      const v = document.getElementById('token').value.trim();
+      const o = document.getElementById('ok');
+      o.textContent = v === EXPECTED
+        ? 'Token accepted — cross-tab transfer succeeded.'
+        : `Token rejected. Expected ${EXPECTED}, received "${v}".`;
+      o.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

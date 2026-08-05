@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Auto-dismiss toast — Obscuring</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    .toast{position:fixed;right:24px;bottom:24px;background:#1b2333;color:#fff;padding:16px 20px;border-radius:10px;
+      z-index:100;box-shadow:0 6px 24px rgba(20,30,60,.3);max-width:340px}
+    .toast button{margin-top:10px;padding:6px 14px;font-size:13px}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>Auto-dismiss toast</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>Timed overlay race <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Clicking Save raises a toast over the Confirm button that disappears on its own after
+      5 seconds. Whether the agent succeeds depends on its timing — it either waits it out or clicks through the gap.
+      This is a genuine race, so results may vary between runs.</p>
+    <label for="note">Note</label>
+    <input type="text" id="note" aria-label="Note" />
+    <div class="toolbar">
+      <button onclick="save()">Save</button>
+      <button class="secondary" id="confirmBtn" onclick="confirmIt()">Confirm</button>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">Confirmed.</div>
+  </div></main>
+  <script>
+    function save(){
+      const t=document.createElement('div');
+      t.className='toast'; t.id='toast'; t.setAttribute('role','status');
+      t.innerHTML='<strong>Draft saved</strong><br>Your note was stored. This message closes automatically.'
+                + '<br><button onclick="this.parentNode.remove()" aria-label="Dismiss notification">Dismiss</button>';
+      document.body.appendChild(t);
+      setTimeout(()=>{ const el=document.getElementById('toast'); if(el) el.remove(); }, 5000);
+    }
+    function confirmIt(){ document.getElementById('ok').style.display='block'; }
+  </script>
+</body>
+</html>

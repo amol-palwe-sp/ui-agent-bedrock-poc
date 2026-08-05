@@ -64,6 +64,12 @@
   const statusDot              = document.getElementById('statusDot');
   const statusText             = document.getElementById('statusText');
   const toastContainer         = document.getElementById('toastContainer');
+  const rejectionPanel         = document.getElementById('rejectionPanel');
+  const rejectionHeadline      = document.getElementById('rejectionHeadline');
+  const rejectionReason        = document.getElementById('rejectionReason');
+  const rejectionSuggestion    = document.getElementById('rejectionSuggestion');
+  const rejectionConfidence    = document.getElementById('rejectionConfidence');
+  const btnForceGenerate       = document.getElementById('btnForceGenerate');
   const sectionResults         = document.getElementById('sectionResults');
   const statsBar               = document.getElementById('statsBar');
   const statsTotalRows         = document.getElementById('statsTotalRows');
@@ -96,7 +102,13 @@
     initRunMode();
     setStatus('ready');
 
-    btnGenerate.addEventListener('click', handleGenerate);
+    btnGenerate.addEventListener('click', function () { handleGenerate(false); });
+    if (btnForceGenerate) {
+      btnForceGenerate.addEventListener('click', function () {
+        hideRejectionPanel();
+        handleGenerate(true);
+      });
+    }
     btnRun.addEventListener('click', handleRun);
     btnStop.addEventListener('click', handleStop);
     btnAddStep.addEventListener('click', function () { addStep(''); });
@@ -150,6 +162,7 @@
     fileSize.textContent = formatFileSize(file.size);
     fileInfo.classList.remove('hidden');
     btnGenerate.disabled = false;
+    hideRejectionPanel();
   }
 
   // ── Mode Selector ──────────────────────────────────────────────────────────
@@ -277,7 +290,7 @@
   }
 
   // ── Generate ───────────────────────────────────────────────────────────────
-  function handleGenerate() {
+  function handleGenerate(force) {
     if (isGenerating || !uploadedFile) return;
     isGenerating = true;
     generatedUrl = '';
@@ -285,6 +298,7 @@
     btnGenerate.disabled = true;
     btnGenerateText.textContent = 'Generating...';
     btnGenerateSpinner.classList.remove('hidden');
+    hideRejectionPanel();
     clearLog();
 
     const form = new FormData();
@@ -292,6 +306,7 @@
     if (overrideUrl.value.trim()) form.append('url', overrideUrl.value.trim());
     form.append('maxFrames', maxFramesInput.value);
     form.append('evalEnabled', evalToggle && evalToggle.checked ? 'true' : 'false');
+    if (force) form.append('force', 'true');
 
     fetch('/api/aggregation/generate', { method: 'POST', body: form })
       .then(function (r) { return r.json(); })
@@ -301,6 +316,12 @@
           setStatus('error');
           return;
         }
+        if (data.status === 'REJECTED') {
+          showRejectionPanel(data.rejection || {});
+          setStatus('ready');
+          return;
+        }
+        if (data.relevanceWarning) showError(data.relevanceWarning);
 
         // Store URL from Claude; fall back to override field if Claude returned blank
         generatedUrl = (data.url && data.url.trim())
@@ -1114,6 +1135,34 @@
   function unlockSection(el) {
     el.classList.remove('locked');
     el.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  const REJECTION_HEADLINES = {
+    NOT_A_SCREEN_RECORDING: 'This is not a screen recording',
+    NOT_A_WEB_UI:           'This is not a web application',
+    OUT_OF_DOMAIN:          'This workflow is out of scope',
+    NO_INTERACTIONS:        'No interactions were recorded',
+    UNREADABLE:             'The recording is too unclear to read'
+  };
+
+  function showRejectionPanel(rejection) {
+    if (!rejectionPanel) return;
+    rejectionHeadline.textContent =
+      REJECTION_HEADLINES[rejection.category] || 'Video rejected';
+    rejectionReason.textContent = rejection.reason || '';
+    rejectionSuggestion.textContent = rejection.suggestion || '';
+    rejectionConfidence.textContent = rejection.confidence
+      ? 'Confidence ' + rejection.confidence + '%'
+      : '';
+    rejectionPanel.classList.remove('hidden');
+    rejectionPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!sectionLog.classList.contains('locked')) {
+      appendLog('Video rejected: ' + (rejection.reason || rejection.category), 'error');
+    }
+  }
+
+  function hideRejectionPanel() {
+    if (rejectionPanel) rejectionPanel.classList.add('hidden');
   }
 
   function showError(msg) {

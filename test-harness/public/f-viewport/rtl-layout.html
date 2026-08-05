@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RTL layout — Viewport</title><link rel="stylesheet" href="/styles.css" />
+  <style>
+    /* Right-to-left: labels, inputs and button order are all mirrored.
+       Positional reasoning ("the button on the right") inverts. */
+    body{direction:rtl}
+    .toolbar{flex-direction:row-reverse;justify-content:flex-end}
+  </style>
+</head>
+<body>
+  <header class="appbar"><h1>تخطيط من اليمين إلى اليسار (RTL)</h1><a href="/">Catalog</a></header>
+  <main><div class="card">
+    <h2>RTL form <span class="pill warn">Ladder</span></h2>
+    <p class="subtitle">Arabic right-to-left layout. Reading order and visual position are mirrored, so any
+      position-based grounding ("the field on the left") is inverted. English aria-labels are retained so
+      structural matching can still succeed.</p>
+
+    <label for="fullName">الاسم الكامل <span class="hint">(Full name)</span></label>
+    <input type="text" id="fullName" aria-label="Full name" />
+
+    <label for="dept">القسم <span class="hint">(Department)</span></label>
+    <select id="dept" aria-label="Department">
+      <option>اختر…</option><option>الهندسة</option><option>المالية</option><option>التسويق</option>
+    </select>
+
+    <div class="toolbar">
+      <button onclick="document.getElementById('ok').style.display='block'" aria-label="Save">حفظ</button>
+      <button class="secondary" aria-label="Cancel">إلغاء</button>
+    </div>
+    <div id="ok" class="done-banner" style="display:none;margin-top:16px;">تم الحفظ — Saved.</div>
+  </div></main>
+</body>
+</html>
