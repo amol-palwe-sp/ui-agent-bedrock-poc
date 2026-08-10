@@ -10,6 +10,19 @@ import java.util.List;
 
 /**
  * Stores all scores and metadata for one benchmark eval case run.
+ *
+ * <h2>What decides a case</h2>
+ * For cases with ground truth ({@code HAPPY}, {@code INCORRECT}) the LLM judge is the only
+ * quality gate. Word-overlap metrics and per-case assertions used to gate alongside it and
+ * no longer exist.
+ *
+ * <p>Two non-quality conditions still fail a case, because both describe a run where
+ * <em>no judge score exists</em>: a usable video turned away by the triage gate, and a run
+ * that errored before producing a plan. Without them a rejected or crashed case would pass
+ * on the strength of a verdict it never received.
+ *
+ * <p>Cases without ground truth ({@code INVALID}, {@code UNWORKABLE}) are never judged —
+ * there is nothing to compare against — so they are decided on their verdict as before.
  */
 public final class EvalResult {
 
@@ -33,49 +46,34 @@ public final class EvalResult {
     /** TRUST | REVIEW | CAUTION, or "" when the confidence check didn't run. */
     private final String  confidenceRecommendation;
 
-    // ── Automated metrics (0.0–1.0) ──────────────────────────────────────────
-    private final double stepRecall;
-    private final double stepPrecision;
-    private final double stepOrderScore;
-    /** Diagnostic only — feeds no score. See {@link EvalMetrics} for why. */
-    private final double labelAccuracyScore;
-    private final double placeholderScore;
-    private final double paginationScore;
-    private final double overallScore;
-
-    // ── Which checks actually applied to this case ───────────────────────────
-    private final boolean placeholderApplicable;
-    private final boolean paginationApplicable;
+    // ── LLM judge (0.0–1.0) — the only quality signal ────────────────────────
     private final boolean judgeApplicable;
-
-    // ── LLM judge scores (0.0–10.0) ──────────────────────────────────────────
-    private final double judgeCorrectnessScore;
-    private final double judgeOrderScore;
-    private final double judgeHallucinationScore;
-    private final double judgeLabelScore;
-    private final double judgePlaceholderScore;
-    private final double judgeOverallScore;
-    private final String judgeReasoning;
+    private final double  judgeCorrectnessScore;
+    private final double  judgeOrderScore;
+    private final double  judgeHallucinationScore;
+    private final double  judgeOverallScore;
+    private final boolean judgeTestPassed;
+    private final String  judgeReasoning;
+    /** True when the judge call or parse failed — infrastructure, not plan quality. */
+    private final boolean judgeFailed;
+    /** Self-contradictions found in the judge's own response. */
+    private final List<String> judgeIssues;
 
     // ── Generated output ──────────────────────────────────────────────────────
     private final List<String> generatedSteps;
     private final String       generatedGoal;
     private final String       generatedPaginationType;
 
-    // ── Error tracking ────────────────────────────────────────────────────────
+    // ── Evidence, as quoted by the judge ─────────────────────────────────────
     private final List<String> hallucinatedSteps;
     private final List<String> missingSteps;
-    private final boolean      misordered;
-    private final List<String> missingPlaceholders;
     private final List<String> issues;
 
     // ── Meta ──────────────────────────────────────────────────────────────────
     private final long       durationMs;
     private final TokenUsage tokenUsage;
 
-    // ── Verdict: three independent conditions, all of which must hold ─────────
-    private final boolean safetyGatePassed;
-    private final boolean countedFactsPassed;
+    // ── Verdict ───────────────────────────────────────────────────────────────
     private final boolean graderPassed;
     private final boolean passed;
 
@@ -98,52 +96,28 @@ public final class EvalResult {
         this.expectedRejection    = b.expectedRejection != null ? b.expectedRejection : "";
         this.crashed              = b.crashed;
         this.confidenceRecommendation = b.confidenceRecommendation != null ? b.confidenceRecommendation : "";
-        this.stepRecall           = b.stepRecall;
-        this.stepPrecision        = b.stepPrecision;
-        this.stepOrderScore       = b.stepOrderScore;
-        this.labelAccuracyScore   = b.labelAccuracyScore;
-        this.placeholderScore     = b.placeholderScore;
-        this.paginationScore      = b.paginationScore;
-        this.overallScore         = b.overallScore;
+        this.judgeApplicable          = b.judgeApplicable;
         this.judgeCorrectnessScore    = b.judgeCorrectnessScore;
         this.judgeOrderScore          = b.judgeOrderScore;
         this.judgeHallucinationScore  = b.judgeHallucinationScore;
-        this.judgeLabelScore          = b.judgeLabelScore;
-        this.judgePlaceholderScore    = b.judgePlaceholderScore;
         this.judgeOverallScore        = b.judgeOverallScore;
+        this.judgeTestPassed          = b.judgeTestPassed;
         this.judgeReasoning           = b.judgeReasoning;
+        this.judgeFailed              = b.judgeFailed;
+        this.judgeIssues              = Collections.unmodifiableList(new ArrayList<>(b.judgeIssues));
         this.generatedSteps           = Collections.unmodifiableList(new ArrayList<>(b.generatedSteps));
         this.generatedGoal            = b.generatedGoal;
         this.generatedPaginationType  = b.generatedPaginationType;
         this.hallucinatedSteps        = Collections.unmodifiableList(new ArrayList<>(b.hallucinatedSteps));
         this.missingSteps             = Collections.unmodifiableList(new ArrayList<>(b.missingSteps));
-        this.misordered               = b.misordered;
-        this.missingPlaceholders      = Collections.unmodifiableList(new ArrayList<>(b.missingPlaceholders));
         this.issues                   = Collections.unmodifiableList(new ArrayList<>(b.issues));
         this.durationMs               = b.durationMs;
         this.tokenUsage               = b.tokenUsage != null ? b.tokenUsage : TokenUsage.ZERO;
 
-        // Applicability defaults to what the task type and mode imply, but callers that know
-        // more (e.g. whether the case declared any credentials at all) can state it outright.
-        this.placeholderApplicable = b.placeholderApplicable != null
-                ? b.placeholderApplicable
-                : "PLACEHOLDER".equalsIgnoreCase(this.mode);
-        this.paginationApplicable = b.paginationApplicable != null
-                ? b.paginationApplicable
-                : "AGGREGATION".equalsIgnoreCase(this.taskType);
-        this.judgeApplicable = b.judgeApplicable;
-
-        // Hard gate: every declared variable must appear as a placeholder in the generated steps.
-        this.safetyGatePassed = this.missingPlaceholders.isEmpty();
-        // Each counted fact clears its own bar — a blended average would let a failing
-        // dimension hide behind strong ones.
-        this.countedFactsPassed = stepRecall    >= EvalMetrics.MIN_STEP_RECALL
-                               && stepPrecision >= EvalMetrics.MIN_STEP_PRECISION
-                               && stepOrderScore >= EvalMetrics.MIN_STEP_ORDER;
-        // A case is not penalised for a judge that was skipped or errored out; that is an
-        // infrastructure gap, recorded in issues(), not a quality signal about the output.
-        this.graderPassed = !this.judgeApplicable
-                || judgeOverallScore >= EvalMetrics.MIN_JUDGE_OVERALL;
+        // A judge that never ran cannot pass a case. This used to default to true, which was
+        // safe only because two other conditions gated alongside it; as the sole gate it would
+        // turn every skipped or failed judge call into a free pass.
+        this.graderPassed = this.judgeApplicable && !this.judgeFailed && this.judgeTestPassed;
 
         boolean gateRejected  = "REJECT".equals(this.gateVerdict);
         boolean gateUncertain = "UNCERTAIN".equals(this.gateVerdict);
@@ -155,8 +129,7 @@ public final class EvalResult {
 
         switch (this.expectation) {
             case HAPPY, INCORRECT -> {
-                this.behavedAsExpected = !gateRejected
-                        && this.safetyGatePassed && this.countedFactsPassed && this.graderPassed;
+                this.behavedAsExpected = !this.wronglyRejected && !this.crashed && this.graderPassed;
                 this.overConfident = false;
             }
             case INVALID -> {
@@ -180,7 +153,6 @@ public final class EvalResult {
             }
         }
 
-        // Unhappy cases have no known-good steps to score, so their verdict *is* the pass.
         this.passed = this.behavedAsExpected;
     }
 
@@ -191,35 +163,23 @@ public final class EvalResult {
     public String     description()          { return description; }
     public String     taskType()             { return taskType; }
     public String     mode()                 { return mode; }
-    public double     stepRecall()           { return stepRecall; }
-    public double     stepPrecision()        { return stepPrecision; }
-    public double     stepOrderScore()       { return stepOrderScore; }
-    public double     labelAccuracyScore()   { return labelAccuracyScore; }
-    public double     placeholderScore()     { return placeholderScore; }
-    public double     paginationScore()      { return paginationScore; }
-    public double     overallScore()         { return overallScore; }
     public double     judgeCorrectnessScore()   { return judgeCorrectnessScore; }
     public double     judgeOrderScore()         { return judgeOrderScore; }
     public double     judgeHallucinationScore() { return judgeHallucinationScore; }
-    public double     judgeLabelScore()         { return judgeLabelScore; }
-    public double     judgePlaceholderScore()   { return judgePlaceholderScore; }
     public double     judgeOverallScore()       { return judgeOverallScore; }
+    public boolean    judgeTestPassed()         { return judgeTestPassed; }
     public String     judgeReasoning()          { return judgeReasoning; }
+    public boolean    judgeFailed()             { return judgeFailed; }
+    public List<String> judgeIssues()           { return judgeIssues; }
     public List<String> generatedSteps()        { return generatedSteps; }
     public String     generatedGoal()           { return generatedGoal; }
     public String     generatedPaginationType() { return generatedPaginationType; }
     public List<String> hallucinatedSteps()     { return hallucinatedSteps; }
     public List<String> missingSteps()          { return missingSteps; }
-    public boolean    misordered()              { return misordered; }
-    public List<String> missingPlaceholders()   { return missingPlaceholders; }
     public List<String> issues()               { return issues; }
     public long       durationMs()             { return durationMs; }
     public TokenUsage tokenUsage()             { return tokenUsage; }
-    public boolean    placeholderApplicable()  { return placeholderApplicable; }
-    public boolean    paginationApplicable()   { return paginationApplicable; }
     public boolean    judgeApplicable()        { return judgeApplicable; }
-    public boolean    safetyGatePassed()       { return safetyGatePassed; }
-    public boolean    countedFactsPassed()     { return countedFactsPassed; }
     public boolean    graderPassed()           { return graderPassed; }
     public boolean    passed()                 { return passed; }
     public EvalCase.Expectation expectation()  { return expectation; }
@@ -236,6 +196,9 @@ public final class EvalResult {
     public boolean    isHappy()                { return expectation == EvalCase.Expectation.HAPPY; }
     public boolean    isUnhappy()              { return expectation != EvalCase.Expectation.HAPPY; }
 
+    /** True when this case was scored by the judge, i.e. it has ground truth to compare against. */
+    public boolean scoredAgainstGroundTruth() { return expectation.hasGroundTruthSteps(); }
+
     /**
      * True when the gate named the exact category the case expected. Reported as a
      * diagnostic: refusing is the requirement, naming the right reason is a bonus.
@@ -249,16 +212,33 @@ public final class EvalResult {
         if (passed) return "";
         List<String> reasons = new ArrayList<>();
         if (expectation.hasGroundTruthSteps()) {
-            if (wronglyRejected)     reasons.add("usable video wrongly rejected");
-            if (!safetyGatePassed)   reasons.add("credentials not tokenized");
-            if (!countedFactsPassed) reasons.add("counted facts below bar");
-            if (!graderPassed)       reasons.add("judge below bar");
+            if (wronglyRejected)      reasons.add("usable video wrongly rejected");
+            else if (crashed)         reasons.add("errored before producing a plan");
+            else if (judgeFailed)     reasons.add("judge unavailable — case unscored, not failed on quality");
+            else if (!judgeApplicable) reasons.add("judge did not run — case unscored");
+            else                      reasons.add(judgeSummary());
         } else {
             if (overConfident)   reasons.add("produced a confident plan from an unusable video");
             else if (crashed)    reasons.add("errored rather than refusing");
             else                 reasons.add("did not refuse or flag the input");
         }
         return String.join("; ", reasons);
+    }
+
+    /**
+     * Names which bar the judge missed and quotes its reasoning, which is now the only
+     * diagnostic a reviewer gets on a failing case.
+     */
+    private String judgeSummary() {
+        List<String> parts = new ArrayList<>();
+        if (judgeCorrectnessScore < com.sailpoint.poc.uiagent.eval.shared.LlmJudge.MIN_CORRECTNESS) {
+            parts.add(String.format("correctness %.2f", judgeCorrectnessScore));
+        }
+        if (judgeOverallScore < com.sailpoint.poc.uiagent.eval.shared.LlmJudge.MIN_OVERALL) {
+            parts.add(String.format("overall %.2f", judgeOverallScore));
+        }
+        String bars = parts.isEmpty() ? "judge below bar" : "judge below bar (" + String.join(", ", parts) + ")";
+        return judgeReasoning == null || judgeReasoning.isBlank() ? bars : bars + " — " + judgeReasoning;
     }
 
     // ── Serialization ─────────────────────────────────────────────────────────
@@ -272,65 +252,61 @@ public final class EvalResult {
         o.put("taskType",    taskType);
         o.put("mode",        mode);
         o.put("passed",      passed);
+        o.put("expectation", expectation.name());
         o.put("durationMs",  durationMs);
 
-        // Each condition is reported separately so a reader can see *which* one failed
-        // without having to reverse-engineer it from a blended number.
+        boolean scored = expectation.hasGroundTruthSteps();
         JSONObject verdict = new JSONObject();
-        verdict.put("safetyGatePassed",   safetyGatePassed);
-        verdict.put("countedFactsPassed", countedFactsPassed);
-        verdict.put("graderPassed",       judgeApplicable ? (Object) graderPassed : JSONObject.NULL);
-        verdict.put("failureReason",      failureReason());
+        verdict.put("behavedAsExpected", behavedAsExpected);
+        verdict.put("graderPassed",
+                (scored && judgeApplicable) ? (Object) graderPassed : JSONObject.NULL);
+        verdict.put("overConfident",     scored ? JSONObject.NULL : (Object) overConfident);
+        verdict.put("wronglyRejected",   wronglyRejected);
+        verdict.put("crashed",           crashed);
+        verdict.put("judgeFailed",       judgeFailed);
+        verdict.put("failureReason",     failureReason());
         o.put("verdict", verdict);
 
-        // Checks that did not apply are serialized as null, never as a number. A 0.0 here
-        // reads as "scored zero" and a 1.0 as "passed", when the truth is "never ran".
-        JSONObject metrics = new JSONObject();
-        metrics.put("stepRecall",       round(stepRecall));
-        metrics.put("stepPrecision",    round(stepPrecision));
-        metrics.put("stepOrderScore",   round(stepOrderScore));
-        metrics.put("placeholderScore", placeholderApplicable ? (Object) round(placeholderScore) : JSONObject.NULL);
-        metrics.put("paginationScore",  paginationApplicable  ? (Object) round(paginationScore)  : JSONObject.NULL);
-        metrics.put("overallScore",     round(overallScore));
-        o.put("metrics", metrics);
+        JSONObject gate = new JSONObject();
+        gate.put("verdict",    gateVerdict);
+        gate.put("category",   gateCategory);
+        gate.put("confidence", gateConfidence);
+        gate.put("reason",     gateReason);
+        gate.put("expectedRejection", expectedRejection.isBlank() ? JSONObject.NULL : expectedRejection);
+        gate.put("categoryMatched",
+                expectedRejection.isBlank() ? JSONObject.NULL : (Object) rejectionCategoryMatched());
+        o.put("triageGate", gate);
 
-        JSONObject applicable = new JSONObject();
-        applicable.put("placeholder", placeholderApplicable);
-        applicable.put("pagination",  paginationApplicable);
-        applicable.put("judge",       judgeApplicable);
-        o.put("checksApplicable", applicable);
+        o.put("confidenceRecommendation",
+                confidenceRecommendation.isBlank() ? JSONObject.NULL : confidenceRecommendation);
 
-        // Kept away from `metrics` so it is not mistaken for something that affects the verdict.
-        JSONObject diagnostics = new JSONObject();
-        diagnostics.put("labelAccuracyScore", round(labelAccuracyScore));
-        o.put("diagnostics", diagnostics);
-
+        // Scores are null, never 0.0, when the judge did not run. A 0.0 reads as "scored
+        // zero" when the truth is "never scored", and those mean opposite things.
         JSONObject judge = new JSONObject();
-        if (judgeApplicable) {
+        if (judgeApplicable && !judgeFailed) {
             judge.put("correctness",   round(judgeCorrectnessScore));
             judge.put("order",         round(judgeOrderScore));
             judge.put("hallucination", round(judgeHallucinationScore));
-            judge.put("labelQuality",  round(judgeLabelScore));
-            // The judge is told to answer 10 in LITERAL mode, so the number carries no signal.
-            judge.put("placeholder",   placeholderApplicable ? (Object) round(judgePlaceholderScore) : JSONObject.NULL);
             judge.put("overall",       round(judgeOverallScore));
+            judge.put("testPassed",    judgeTestPassed);
             judge.put("reasoning",     judgeReasoning != null ? judgeReasoning : "");
         } else {
-            for (String k : new String[]{"correctness", "order", "hallucination",
-                                         "labelQuality", "placeholder", "overall"}) {
+            for (String k : new String[]{"correctness", "order", "hallucination", "overall"}) {
                 judge.put(k, JSONObject.NULL);
             }
-            judge.put("reasoning", "");
+            judge.put("testPassed", JSONObject.NULL);
+            judge.put("reasoning",  judgeReasoning != null ? judgeReasoning : "");
         }
+        judge.put("failed", judgeFailed);
+        judge.put("issues", toJsonArray(judgeIssues));
         o.put("judgeScores", judge);
 
         o.put("generatedGoal",           generatedGoal != null ? generatedGoal : "");
         o.put("generatedPaginationType", generatedPaginationType != null ? generatedPaginationType : "");
         o.put("generatedSteps",          toJsonArray(generatedSteps));
+        // Quoted by the judge from its own comparison, not computed by word overlap.
         o.put("hallucinatedSteps",       toJsonArray(hallucinatedSteps));
         o.put("missingSteps",            toJsonArray(missingSteps));
-        o.put("misordered",              misordered);
-        o.put("missingPlaceholders",     toJsonArray(missingPlaceholders));
         o.put("issues",                  toJsonArray(issues));
 
         JSONObject usage = new JSONObject();
@@ -364,67 +340,62 @@ public final class EvalResult {
         private String description = "";
         private String taskType = "";
         private String mode = "";
-        private double stepRecall = 0.0;
-        private double stepPrecision = 0.0;
-        private double stepOrderScore = 0.0;
-        private double labelAccuracyScore = 0.0;
-        private double placeholderScore = 1.0;
-        private double paginationScore = 0.0;
-        private double overallScore = 0.0;
         private double judgeCorrectnessScore = 0.0;
         private double judgeOrderScore = 0.0;
         private double judgeHallucinationScore = 0.0;
-        private double judgeLabelScore = 0.0;
-        private double judgePlaceholderScore = 0.0;
         private double judgeOverallScore = 0.0;
+        private boolean judgeTestPassed = false;
         private String judgeReasoning = "";
+        private boolean judgeFailed = false;
+        private List<String> judgeIssues = new ArrayList<>();
         private List<String> generatedSteps = new ArrayList<>();
         private String generatedGoal = "";
         private String generatedPaginationType = "";
         private List<String> hallucinatedSteps = new ArrayList<>();
         private List<String> missingSteps = new ArrayList<>();
-        private boolean misordered = false;
-        private List<String> missingPlaceholders = new ArrayList<>();
         private List<String> issues = new ArrayList<>();
         private long durationMs = 0L;
         private TokenUsage tokenUsage = TokenUsage.ZERO;
-        // Null means "infer from taskType/mode".
-        private Boolean placeholderApplicable = null;
-        private Boolean paginationApplicable = null;
         private boolean judgeApplicable = false;
+        private EvalCase.Expectation expectation = EvalCase.Expectation.HAPPY;
+        private String gateVerdict = "SKIPPED";
+        private String gateCategory = "NONE";
+        private int gateConfidence = 0;
+        private String gateReason = "";
+        private String expectedRejection = "";
+        private boolean crashed = false;
+        private String confidenceRecommendation = "";
 
         public Builder caseId(String v)               { this.caseId = v; return this; }
         public Builder uiVariety(String v)            { this.uiVariety = v; return this; }
         public Builder description(String v)          { this.description = v; return this; }
         public Builder taskType(String v)             { this.taskType = v; return this; }
         public Builder mode(String v)                 { this.mode = v; return this; }
-        public Builder stepRecall(double v)           { this.stepRecall = v; return this; }
-        public Builder stepPrecision(double v)        { this.stepPrecision = v; return this; }
-        public Builder stepOrderScore(double v)       { this.stepOrderScore = v; return this; }
-        public Builder labelAccuracyScore(double v)   { this.labelAccuracyScore = v; return this; }
-        public Builder placeholderScore(double v)     { this.placeholderScore = v; return this; }
-        public Builder paginationScore(double v)      { this.paginationScore = v; return this; }
-        public Builder overallScore(double v)         { this.overallScore = v; return this; }
         public Builder judgeCorrectnessScore(double v)   { this.judgeCorrectnessScore = v; return this; }
         public Builder judgeOrderScore(double v)         { this.judgeOrderScore = v; return this; }
         public Builder judgeHallucinationScore(double v) { this.judgeHallucinationScore = v; return this; }
-        public Builder judgeLabelScore(double v)         { this.judgeLabelScore = v; return this; }
-        public Builder judgePlaceholderScore(double v)   { this.judgePlaceholderScore = v; return this; }
         public Builder judgeOverallScore(double v)       { this.judgeOverallScore = v; return this; }
+        public Builder judgeTestPassed(boolean v)        { this.judgeTestPassed = v; return this; }
         public Builder judgeReasoning(String v)          { this.judgeReasoning = v; return this; }
+        public Builder judgeFailed(boolean v)            { this.judgeFailed = v; return this; }
+        public Builder judgeIssues(List<String> v)       { this.judgeIssues = v != null ? v : new ArrayList<>(); return this; }
         public Builder generatedSteps(List<String> v)    { this.generatedSteps = v != null ? v : new ArrayList<>(); return this; }
         public Builder generatedGoal(String v)           { this.generatedGoal = v; return this; }
         public Builder generatedPaginationType(String v) { this.generatedPaginationType = v; return this; }
         public Builder hallucinatedSteps(List<String> v) { this.hallucinatedSteps = v != null ? v : new ArrayList<>(); return this; }
         public Builder missingSteps(List<String> v)      { this.missingSteps = v != null ? v : new ArrayList<>(); return this; }
-        public Builder misordered(boolean v)             { this.misordered = v; return this; }
-        public Builder missingPlaceholders(List<String> v) { this.missingPlaceholders = v != null ? v : new ArrayList<>(); return this; }
         public Builder issues(List<String> v)            { this.issues = v != null ? v : new ArrayList<>(); return this; }
         public Builder durationMs(long v)                { this.durationMs = v; return this; }
         public Builder tokenUsage(TokenUsage v)          { this.tokenUsage = v; return this; }
-        public Builder placeholderApplicable(boolean v)  { this.placeholderApplicable = v; return this; }
-        public Builder paginationApplicable(boolean v)   { this.paginationApplicable = v; return this; }
         public Builder judgeApplicable(boolean v)        { this.judgeApplicable = v; return this; }
+        public Builder expectation(EvalCase.Expectation v) { this.expectation = v; return this; }
+        public Builder gateVerdict(String v)             { this.gateVerdict = v; return this; }
+        public Builder gateCategory(String v)            { this.gateCategory = v; return this; }
+        public Builder gateConfidence(int v)             { this.gateConfidence = v; return this; }
+        public Builder gateReason(String v)              { this.gateReason = v; return this; }
+        public Builder expectedRejection(String v)       { this.expectedRejection = v; return this; }
+        public Builder crashed(boolean v)                { this.crashed = v; return this; }
+        public Builder confidenceRecommendation(String v) { this.confidenceRecommendation = v; return this; }
 
         public EvalResult build() { return new EvalResult(this); }
     }

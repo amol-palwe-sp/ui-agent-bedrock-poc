@@ -1,0 +1,46 @@
+# Mirrors the ruff configuration in the sp-agents repository, so this harness is
+# held to the same standard as the SDK it plugs into.
+#
+#   evals/.venv/bin/ruff check evals/
+#   evals/.venv/bin/ruff format evals/
+preview = true
+line-length = 100
+extend-exclude = [".venv"]
+
+[lint]
+select = ["ALL"]
+ignore = [
+    "COM812",   # Recommended by ruff
+    "D203",     # Recommended by ruff
+    "D212",     # Recommended by ruff
+    "D213",     # Conflicts with Google convention
+    "D413",     # Google style does not require a blank line after the last section
+    "ANN401",   # Allow Any in type annotations
+    "ARG002",   # Allow unused arguments
+    "EM101",    # Allow string literals in exceptions
+    "EM102",    # Allow f-string literals in exceptions
+    "TRY003",   # Allow long exception messages
+    "FBT001",   # Allow boolean positional arguments
+    "FBT002",   # Allow boolean keyword arguments
+    "CPY001",   # No copyright notice required
+    "INP001",   # evals/ is a package but not an installed one
+    "A005",     # types.py is the sp-agents convention; it is only ever imported
+                # as evals.types, so the stdlib module is never shadowed
+    "RUF105",   # sp-agents uses `# noqa:`, not `# ruff: ignore`
+    "RUF201",   # sp-agents writes rule codes, not rule names, in this file
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"conftest.py" = [
+    "DOC201",   # Fixture docstrings say what the fixture is; a Returns section repeats it
+]
+"test_*.py" = [
+    "S101",     # Tests assert
+    "D103",     # Test names carry the description
+    "DOC201",   # Helpers in tests skip full Google docstrings
+    "PLR2004",  # Magic numbers are the point of a scoring test
+    "RUF069",   # Exact score comparisons are deliberate; the values are set literals
+]

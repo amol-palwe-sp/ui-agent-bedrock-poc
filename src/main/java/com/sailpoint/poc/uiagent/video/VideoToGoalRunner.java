@@ -3,8 +3,9 @@ package com.sailpoint.poc.uiagent.video;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.config.VideoConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.LlmClient;
+import com.sailpoint.poc.uiagent.llm.LlmClientFactory;
 
 import java.io.File;
 import java.util.List;
@@ -113,8 +114,10 @@ public final class VideoToGoalRunner {
             return 1;
         }
 
+        LlmClientFactory clients = LlmClientFactory.from(config);
+
         System.out.println("Invoking Claude with " + frames.size() + " frames...");
-        System.out.println("Model: " + config.bedrockModelId());
+        System.out.println("Via: " + clients.describe());
         System.out.println();
 
         String userPrompt = overrideUrl != null ? 
@@ -122,13 +125,7 @@ public final class VideoToGoalRunner {
                 VideoToGoalPrompt.USER_PROMPT;
 
         InvokeResult result;
-        try (BedrockAnthropicClient client = new BedrockAnthropicClient(
-                config.awsRegion(),
-                config.awsProfile(),
-                config.bedrockModelId(),
-                config.maxTokens(),
-                config.temperature())) {
-            
+        try (LlmClient client = clients.create("video-to-goal")) {
             result = client.invokeWithMultipleImages(
                     VideoToGoalPrompt.SYSTEM_PROMPT,
                     userPrompt,

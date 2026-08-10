@@ -3,7 +3,11 @@ package com.sailpoint.poc.uiagent.eval.benchmark;
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.LlmClient;
+import com.sailpoint.poc.uiagent.llm.LlmClientFactory;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
+import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
 import com.sailpoint.poc.uiagent.eval.report.EvalReport;
 import com.sailpoint.poc.uiagent.eval.shared.LlmJudge;
 import com.sailpoint.poc.uiagent.video.GoalExtractor;
@@ -13,6 +17,8 @@ import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 import com.sailpoint.poc.uiagent.video.VideoFrameExtractor;
 import com.sailpoint.poc.uiagent.video.VideoToGoalPrompt;
+import com.sailpoint.poc.uiagent.video.relevance.RelevanceResult;
+import com.sailpoint.poc.uiagent.video.relevance.VideoRelevanceGate;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,20 +34,19 @@ import java.util.function.Consumer;
  * <ol>
  *   <li>Load {@link EvalCase} from benchmarks.json</li>
  *   <li>Extract frames via {@link VideoFrameExtractor}</li>
+ *   <li>Run the relevance gate — the only place the system can refuse a video</li>
  *   <li>Build request + prompt</li>
- *   <li>Invoke Claude via {@link BedrockAnthropicClient}</li>
+ *   <li>Invoke Claude via the {@link LlmClient} that {@code llm.provider} selects</li>
  *   <li>Parse response via {@link VideoAnalysisResult#parse}</li>
- *   <li>Compute metrics via {@link EvalMetrics}</li>
- *   <li>Call {@link LlmJudge} (unless --skip-judge)</li>
+ *   <li>Call {@link LlmJudge} — the sole pass condition for cases with ground truth</li>
  *   <li>Build {@link EvalResult}</li>
  *   <li>Generate {@link EvalReport}</li>
  * </ol>
  *
  * <h2>CLI usage</h2>
  * <pre>
- * ./gradlew runEval -Pargs="--benchmarks=./src/main/resources/eval/benchmarks.json"
+ * ./gradlew runEval -Pargs="--benchmarks=./src/main/resources/eval/stage1-dataset.json"
  * ./gradlew runEval -Pargs="--case=eval_001"
- * ./gradlew runEval -Pargs="--skip-judge"
  * ./gradlew runEval -Pargs="--output=./eval-reports"
  * </pre>
  */
@@ -53,6 +58,7 @@ public final class VideoAnalysisEvaluator {
         String benchmarksPath = config.evalBenchmarksPath();
         String outputDir      = config.evalOutputDir();
         boolean skipJudge     = config.evalSkipJudge();
+        boolean skipTriage    = false;
         String singleCase     = null;
 
         for (String arg : args) {
@@ -60,9 +66,10 @@ public final class VideoAnalysisEvaluator {
             else if (arg.startsWith("--output="))    outputDir      = arg.substring("--output=".length());
             else if (arg.startsWith("--case="))      singleCase     = arg.substring("--case=".length());
             else if (arg.equals("--skip-judge"))     skipJudge      = true;
+            else if (arg.equals("--skip-triage"))    skipTriage     = true;
         }
 
-        run(benchmarksPath, outputDir, skipJudge, singleCase, config, System.out::println);
+        run(benchmarksPath, outputDir, skipJudge, skipTriage, singleCase, config, System.out::println);
     }
 
     /**
@@ -80,6 +87,25 @@ public final class VideoAnalysisEvaluator {
             String benchmarksPath,
             String outputDir,
             boolean skipJudge,
+            String singleCase,
+            PocConfig config,
+            Consumer<String> log) throws Exception {
+        run(benchmarksPath, outputDir, skipJudge, false, singleCase, config, log);
+    }
+
+    /**
+     * As {@link #run(String, String, boolean, String, PocConfig, Consumer)}, with control over
+     * the triage gate.
+     *
+     * @param skipTriage when true the relevance gate is not run, and no case can be rejected
+     *                   before generation. Cheaper, but it makes the invalid and unworkable
+     *                   families unmeasurable, since the gate is what they are testing.
+     */
+    public static void run(
+            String benchmarksPath,
+            String outputDir,
+            boolean skipJudge,
+            boolean skipTriage,
             String singleCase,
             PocConfig config,
             Consumer<String> log) throws Exception {
@@ -136,14 +162,27 @@ public final class VideoAnalysisEvaluator {
             return;
         }
 
+        // The judge is the only thing that can pass a scored case, so skipping it does not
+        // make the run cheaper — it makes it meaningless. Say so rather than emitting a
+        // report full of failures that look like quality problems.
+        if (skipJudge) {
+            long scoredCount = casesToRun.stream()
+                    .filter(c -> c.expectation().hasGroundTruthSteps()).count();
+            if (scoredCount > 0) {
+                log.accept("LOG:WARN:--skip-judge is set and " + scoredCount + " case(s) have "
+                        + "ground truth. The judge is the only pass condition, so those cases "
+                        + "will be reported as unscored rather than passed.");
+            }
+        }
+
         log.accept("LOG:INFO:Running " + casesToRun.size() + " case(s)"
                 + (skipJudge ? " [LLM judge skipped]" : ""));
         log.accept("PROGRESS:0:" + casesToRun.size() + ":Starting...");
 
-        try (BedrockAnthropicClient bedrock = new BedrockAnthropicClient(
-                config.bedrock().region(), config.bedrock().profile(),
-                config.bedrock().modelId(), config.bedrock().maxTokens(),
-                config.bedrock().temperature())) {
+        LlmClientFactory clients = LlmClientFactory.from(config);
+        log.accept("LOG:INFO:LLM transport: " + clients.describe());
+
+        try (LlmClient llm = clients.create("stage1-eval")) {
 
             for (int i = 0; i < casesToRun.size(); i++) {
                 EvalCase evalCase = casesToRun.get(i);
@@ -152,20 +191,31 @@ public final class VideoAnalysisEvaluator {
                 log.accept("PROGRESS:" + i + ":" + casesToRun.size() + ":"
                         + evalCase.id() + " — " + evalCase.description());
 
-                EvalResult result = runCase(evalCase, bedrock, config, skipJudge, log);
+                EvalResult result = runCase(evalCase, llm, clients, config, skipJudge, skipTriage, log);
                 results.add(result);
 
                 String status = result.passed() ? "✅ PASS" : "❌ FAIL";
+                // Unhappy cases are never judged, so report the gate verdict instead of a
+                // score, and say "unscored" rather than "0.00" when the judge did not run.
+                String score;
+                if (!result.scoredAgainstGroundTruth()) {
+                    score = result.gateVerdict();
+                } else if (result.judgeApplicable() && !result.judgeFailed()) {
+                    score = String.format("%.2f", result.judgeOverallScore());
+                } else {
+                    score = "unscored";
+                }
                 log.accept("LOG:" + (result.passed() ? "SUCCESS" : "ERROR") + ":"
-                        + evalCase.id() + " → " + String.format("%.3f", result.overallScore())
+                        + evalCase.id() + " → " + score
                         + " " + status
+                        + (result.failureReason().isBlank() ? "" : " | " + result.failureReason())
                         + (result.issues().isEmpty() ? "" : " | " + result.issues().size() + " issue(s)"));
             }
         }
 
         log.accept("PROGRESS:" + casesToRun.size() + ":" + casesToRun.size() + ":Generating report...");
         log.accept("LOG:INFO:Generating eval report...");
-        EvalReport.generate(results, config.bedrockModelId(), outputDir,
+        EvalReport.generate(results, clients.defaultModelId(), outputDir,
                 line -> log.accept("LOG:INFO:" + line));
         long passed = results.stream().filter(EvalResult::passed).count();
         log.accept("LOG:SUCCESS:Done — " + passed + "/" + results.size() + " passed"
@@ -184,7 +234,14 @@ public final class VideoAnalysisEvaluator {
         if (vp == null || vp.isBlank()) return false;
         try {
             java.nio.file.Path p = Paths.get(vp);
-            return Files.exists(p) && Files.isRegularFile(p) && Files.size(p) > 0;
+            if (!Files.exists(p) || !Files.isRegularFile(p)) return false;
+            // A zero-byte file normally means "not recorded yet", so we skip it. For an
+            // invalid-video case it is the fixture itself — skipping would quietly drop the
+            // very test that checks we handle a corrupt upload gracefully.
+            if (Files.size(p) == 0) {
+                return c.expectation() == EvalCase.Expectation.INVALID;
+            }
+            return true;
         } catch (Exception e) {
             return false;
         }
@@ -194,9 +251,11 @@ public final class VideoAnalysisEvaluator {
 
     private static EvalResult runCase(
             EvalCase evalCase,
-            BedrockAnthropicClient bedrock,
+            LlmClient llm,
+            LlmClientFactory clients,
             PocConfig config,
             boolean skipJudge,
+            boolean skipTriage,
             Consumer<String> log) {
 
         long startMs = System.currentTimeMillis();
@@ -227,7 +286,30 @@ public final class VideoAnalysisEvaluator {
             log.accept("LOG:ERROR:  No frames extracted from video");
             return buildErrorResult(evalCase, issues, System.currentTimeMillis() - startMs);
         }
-        log.accept("LOG:INFO:  Extracted " + frames.size() + " frames — calling Claude...");
+        log.accept("LOG:INFO:  Extracted " + frames.size() + " frames");
+
+        // Step 2b: Relevance triage — the same gate the product runs before generation.
+        // The eval has to go through it too, otherwise the invalid and unworkable families
+        // are testing nothing: the gate is the only place the system can refuse a video.
+        RelevanceResult relevance = RelevanceResult.skipped();
+        if (!skipTriage) {
+            log.accept("LOG:INFO:  Checking whether the video shows a usable UI workflow...");
+            relevance = new VideoRelevanceGate(config.relevance(), clients).evaluate(frames);
+
+            if (relevance.isRejected()) {
+                log.accept("LOG:INFO:  Video rejected by triage — " + relevance.category()
+                        + " (confidence " + relevance.confidence() + "): " + relevance.reason());
+                // Stop here exactly as the product does. For an invalid video this is the
+                // correct outcome, not an error, so it is not recorded as an issue.
+                return buildGateRejectedResult(
+                        evalCase, relevance, issues, System.currentTimeMillis() - startMs);
+            }
+            if (relevance.isUncertain()) {
+                log.accept("LOG:WARN:  Triage uncertain (confidence " + relevance.confidence()
+                        + "): " + relevance.reason());
+            }
+        }
+        log.accept("LOG:INFO:  Calling Claude...");
 
         // Steps 3-5: Build prompt, call Claude, parse response
         // PROVISIONING uses VideoToGoalPrompt (goal block) + GoalExtractor
@@ -243,9 +325,9 @@ public final class VideoAnalysisEvaluator {
             // PLACEHOLDER mode → instruct the model to tokenize entered values as {Field} placeholders.
             String systemPrompt = VideoToGoalPrompt.systemPrompt(evalCase.isPlaceholderMode());
 
-            BedrockAnthropicClient.InvokeResult invokeResult;
+            InvokeResult invokeResult;
             try {
-                invokeResult = bedrock.invokeWithMultipleImages(
+                invokeResult = llm.invokeWithMultipleImages(
                         systemPrompt, userPrompt, frames);
             } catch (Exception e) {
                 issues.add("Claude call failed: " + e.getMessage());
@@ -292,9 +374,9 @@ public final class VideoAnalysisEvaluator {
 
             VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
-            BedrockAnthropicClient.InvokeResult invokeResult;
+            InvokeResult invokeResult;
             try {
-                invokeResult = bedrock.invokeWithMultipleImages(
+                invokeResult = llm.invokeWithMultipleImages(
                         prompts.systemPrompt(), prompts.userPrompt(), frames);
             } catch (Exception e) {
                 issues.add("Claude call failed: " + e.getMessage());
@@ -317,118 +399,79 @@ public final class VideoAnalysisEvaluator {
             }
         }
 
-        // Step 6: Compute automated metrics
-        EvalCase.GroundTruth gt = evalCase.groundTruth();
-
+        // Step 6: Normalise the generated steps for reporting.
         // Strip the system-appended halt clause — it is added by the prompt/UI and is never
-        // part of the GT steps, so it would always be flagged as a hallucination if kept.
+        // part of the authored plan, so it would read as an invented step if kept.
         List<String> genSteps = generated.steps().stream()
                 .filter(s -> !s.toLowerCase().contains("do not perform any further actions"))
                 .collect(java.util.stream.Collectors.toList());
 
-        // Normalize both sides so a focus-click before typing (a UI artifact, not a distinct
-        // action) does not count against precision. Applied symmetrically to keep matching fair.
-        List<String> gtSteps  = EvalMetrics.collapseFocusClicks(gt.steps());
-        genSteps              = EvalMetrics.collapseFocusClicks(genSteps);
+        // Triage is part of what a real run costs, so it belongs in the case total.
+        TokenUsage tokenUsage = invokeUsage.add(relevance.tokenUsage());
 
-        List<String> missingPlaceholders = new ArrayList<>();
-        double stepRecall     = EvalMetrics.computeStepRecall(gtSteps, genSteps);
-        double stepPrecision  = EvalMetrics.computeStepPrecision(gtSteps, genSteps);
-        double stepOrderScore = EvalMetrics.computeStepOrderScore(gtSteps, genSteps);
-        double labelAccuracy  = EvalMetrics.computeLabelAccuracy(gtSteps, genSteps);
-        double placeholderScore = EvalMetrics.computePlaceholderScore(
-                generated.navigationGoal(), genSteps, evalCase.mode(), gt.tokens(), missingPlaceholders);
-        double paginationScore = EvalMetrics.computePaginationScore(
-                gt.paginationPattern(),
-                generated.paginationPattern() != null ? generated.paginationPattern()
-                        : new PaginationPattern("unknown", "", ""),
-                evalCase.taskType());
+        // Step 6b: For unworkable captures the question is not "are the steps right" but
+        // "did it admit it was unsure", so we need the confidence signal to judge the case.
+        String confidenceRecommendation = "";
+        if (evalCase.expectation() == EvalCase.Expectation.UNWORKABLE) {
+            try {
+                ConfidenceResult confidence = ConfidenceEvaluator.evaluate(
+                        generated, evalCase.taskType(), evalCase.mode(), llm);
+                confidenceRecommendation = confidence.recommendation();
+                tokenUsage = tokenUsage.add(confidence.tokenUsage());
+                log.accept("LOG:INFO:  Confidence: " + confidenceRecommendation
+                        + " (" + confidence.confidenceScore() + ")");
+            } catch (Exception e) {
+                issues.add("Confidence check failed: " + e.getMessage());
+                log.accept("LOG:ERROR:  Confidence check failed: " + e.getMessage());
+            }
+        }
 
-        // Record whether each check had anything to check, so the report can say "N/A"
-        // instead of printing a score that was never actually earned.
-        boolean placeholderApplicable = "PLACEHOLDER".equalsIgnoreCase(evalCase.mode())
-                && gt.tokens() != null
-                && gt.tokens().stream().anyMatch(t -> t.name() != null && !t.name().isBlank());
-        boolean paginationApplicable = "AGGREGATION".equalsIgnoreCase(evalCase.taskType())
-                && gt.paginationPattern() != null;
-
-        List<String> hallucinated = EvalMetrics.detectHallucinatedSteps(gtSteps, genSteps);
-        List<String> missing      = EvalMetrics.detectMissingSteps(gtSteps, genSteps);
-        boolean misordered        = stepOrderScore < 0.8;
-
-        TokenUsage tokenUsage = invokeUsage;
-
-        // Step 7: LLM judge (optional)
+        // Step 7: LLM judge — the only thing that decides a scored case.
         double judgeCorrectness   = 0.0;
         double judgeOrder         = 0.0;
         double judgeHallucination = 0.0;
-        double judgeLabel         = 0.0;
-        double judgePlaceholder   = 0.0;
         double judgeOverall       = 0.0;
+        boolean judgeTestPassed   = false;
+        boolean judgeFailed       = false;
         String judgeReasoning     = "";
         boolean judgeApplicable   = false;
+        List<String> judgeIssues  = new ArrayList<>();
+        List<String> hallucinated = new ArrayList<>();
+        List<String> missing      = new ArrayList<>();
 
-        if (!skipJudge) {
+        // The judge compares against known-good steps, so it has nothing to work with on a
+        // case whose correct answer was "produce nothing".
+        boolean judgeable = evalCase.expectation().hasGroundTruthSteps();
+        if (!skipJudge && judgeable) {
             log.accept("LOG:INFO:  Calling LLM judge...");
-            LlmJudge.JudgeResult judgeResult;
-            try {
-                judgeResult = LlmJudge.judge(evalCase, generated, bedrock);
-                judgeApplicable = true;
-            } catch (Exception e) {
-                issues.add("Judge call failed: " + e.getMessage());
-                log.accept("LOG:ERROR:  Judge call failed: " + e.getMessage());
-                judgeResult = LlmJudge.JudgeResult.failure(e.getMessage());
-            }
+            LlmJudge.JudgeResult judgeResult = LlmJudge.judge(evalCase, generated, llm);
+            judgeApplicable    = true;
             judgeCorrectness   = judgeResult.correctness();
             judgeOrder         = judgeResult.order();
             judgeHallucination = judgeResult.hallucination();
-            judgeLabel         = judgeResult.labelQuality();
-            judgePlaceholder   = judgeResult.placeholder();
             judgeOverall       = judgeResult.overall();
+            judgeTestPassed    = judgeResult.testPassed();
+            judgeFailed        = judgeResult.judgeFailed();
             judgeReasoning     = judgeResult.reasoning();
+            judgeIssues        = judgeResult.issues();
+            // The judge quotes its own evidence; these are no longer computed by word overlap.
+            hallucinated       = judgeResult.hallucinatedSteps();
+            missing            = judgeResult.missingSteps();
             tokenUsage         = tokenUsage.add(judgeResult.tokenUsage());
+
+            if (judgeFailed) {
+                issues.add("Judge unavailable: " + judgeReasoning);
+                log.accept("LOG:ERROR:  Judge unavailable — case cannot be scored: " + judgeReasoning);
+            } else {
+                for (String ji : judgeIssues) {
+                    log.accept("LOG:WARN:  Judge self-check: " + ji);
+                }
+            }
         }
 
         // Step 8: Build EvalResult
         String paginationType = generated.paginationPattern() != null
                 ? generated.paginationPattern().type() : "";
-
-        EvalResult partialResult = EvalResult.builder()
-                .caseId(evalCase.id())
-                .uiVariety(evalCase.uiVariety())
-                .description(evalCase.description())
-                .taskType(evalCase.taskType())
-                .mode(evalCase.mode())
-                .stepRecall(stepRecall)
-                .stepPrecision(stepPrecision)
-                .stepOrderScore(stepOrderScore)
-                .labelAccuracyScore(labelAccuracy)
-                .placeholderScore(placeholderScore)
-                .paginationScore(paginationScore)
-                .placeholderApplicable(placeholderApplicable)
-                .paginationApplicable(paginationApplicable)
-                .judgeApplicable(judgeApplicable)
-                .overallScore(0.0)  // recomputed below
-                .judgeCorrectnessScore(judgeCorrectness)
-                .judgeOrderScore(judgeOrder)
-                .judgeHallucinationScore(judgeHallucination)
-                .judgeLabelScore(judgeLabel)
-                .judgePlaceholderScore(judgePlaceholder)
-                .judgeOverallScore(judgeOverall)
-                .judgeReasoning(judgeReasoning)
-                .generatedSteps(genSteps)
-                .generatedGoal(generated.navigationGoal())
-                .generatedPaginationType(paginationType)
-                .hallucinatedSteps(hallucinated)
-                .missingSteps(missing)
-                .misordered(misordered)
-                .missingPlaceholders(missingPlaceholders)
-                .issues(issues)
-                .durationMs(System.currentTimeMillis() - startMs)
-                .tokenUsage(tokenUsage)
-                .build();
-
-        double overallScore = EvalMetrics.computeOverallScore(partialResult);
 
         return EvalResult.builder()
                 .caseId(evalCase.id())
@@ -436,37 +479,61 @@ public final class VideoAnalysisEvaluator {
                 .description(evalCase.description())
                 .taskType(evalCase.taskType())
                 .mode(evalCase.mode())
-                .stepRecall(stepRecall)
-                .stepPrecision(stepPrecision)
-                .stepOrderScore(stepOrderScore)
-                .labelAccuracyScore(labelAccuracy)
-                .placeholderScore(placeholderScore)
-                .paginationScore(paginationScore)
-                .placeholderApplicable(placeholderApplicable)
-                .paginationApplicable(paginationApplicable)
                 .judgeApplicable(judgeApplicable)
-                .overallScore(overallScore)
+                .expectation(evalCase.expectation())
+                .gateVerdict(relevance.verdict().name())
+                .gateCategory(relevance.category().name())
+                .gateConfidence(relevance.confidence())
+                .gateReason(relevance.reason())
+                .expectedRejection(evalCase.expectedRejection())
+                .confidenceRecommendation(confidenceRecommendation)
                 .judgeCorrectnessScore(judgeCorrectness)
                 .judgeOrderScore(judgeOrder)
                 .judgeHallucinationScore(judgeHallucination)
-                .judgeLabelScore(judgeLabel)
-                .judgePlaceholderScore(judgePlaceholder)
                 .judgeOverallScore(judgeOverall)
+                .judgeTestPassed(judgeTestPassed)
+                .judgeFailed(judgeFailed)
+                .judgeIssues(judgeIssues)
                 .judgeReasoning(judgeReasoning)
                 .generatedSteps(genSteps)
                 .generatedGoal(generated.navigationGoal())
                 .generatedPaginationType(paginationType)
                 .hallucinatedSteps(hallucinated)
                 .missingSteps(missing)
-                .misordered(misordered)
-                .missingPlaceholders(missingPlaceholders)
                 .issues(issues)
                 .durationMs(System.currentTimeMillis() - startMs)
                 .tokenUsage(tokenUsage)
                 .build();
     }
 
-    // ── Error result helper ───────────────────────────────────────────────────
+    // ── Result helpers ────────────────────────────────────────────────────────
+
+    /**
+     * Result for a case the triage gate turned away before generation.
+     *
+     * <p>Not marked as crashed: refusing is a real verdict, and for an invalid video it is the
+     * correct one. Whether it counts as a pass is decided by the case's expectation, so a
+     * wrongly rejected happy video still fails here.
+     */
+    private static EvalResult buildGateRejectedResult(
+            EvalCase c, RelevanceResult relevance, List<String> issues, long durationMs) {
+        return EvalResult.builder()
+                .caseId(c.id())
+                .uiVariety(c.uiVariety())
+                .description(c.description())
+                .taskType(c.taskType())
+                .mode(c.mode())
+                .expectation(c.expectation())
+                .gateVerdict(relevance.verdict().name())
+                .gateCategory(relevance.category().name())
+                .gateConfidence(relevance.confidence())
+                .gateReason(relevance.reason())
+                .expectedRejection(c.expectedRejection())
+                .issues(issues)
+                .durationMs(durationMs)
+                .tokenUsage(relevance.tokenUsage())
+                .build();
+    }
 
     private static EvalResult buildErrorResult(EvalCase c, List<String> issues, long durationMs) {
         return EvalResult.builder()
@@ -475,6 +542,10 @@ public final class VideoAnalysisEvaluator {
                 .description(c.description())
                 .taskType(c.taskType())
                 .mode(c.mode())
+                .expectation(c.expectation())
+                // An error is not a refusal. Without this an invalid case would "pass" by
+                // crashing, which is the one way of producing no steps that must not count.
+                .crashed(true)
                 .issues(issues)
                 .durationMs(durationMs)
                 .build();

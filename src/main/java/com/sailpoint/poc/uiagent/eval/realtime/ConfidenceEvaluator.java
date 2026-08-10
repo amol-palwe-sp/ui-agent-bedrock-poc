@@ -1,7 +1,7 @@
 package com.sailpoint.poc.uiagent.eval.realtime;
 
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
 import com.sailpoint.poc.uiagent.eval.benchmark.EvalMetrics;
+import com.sailpoint.poc.uiagent.llm.LlmClient;
 import com.sailpoint.poc.uiagent.eval.shared.LlmJudge;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
 
@@ -25,14 +25,14 @@ public final class ConfidenceEvaluator {
      * @param generated the parsed video analysis result
      * @param taskType  "AGGREGATION" or "PROVISIONING"
      * @param mode      "PLACEHOLDER" or "LITERAL"
-     * @param bedrock   the Bedrock client for the LLM judge call
+     * @param llm       the client to reach the judge model through
      * @return a {@link ConfidenceResult} with score, recommendation, and warnings
      */
     public static ConfidenceResult evaluate(
             VideoAnalysisResult generated,
             String taskType,
             String mode,
-            BedrockAnthropicClient bedrock) {
+            LlmClient llm) {
 
         List<String> warnings            = new ArrayList<>();
         List<String> suspectedHalls      = new ArrayList<>();
@@ -94,8 +94,10 @@ public final class ConfidenceEvaluator {
         }
 
         // ── LLM judge ─────────────────────────────────────────────────────────
-        LlmJudge.JudgeResult judgeResult = LlmJudge.judgeWithoutGroundTruth(
-                generated, taskType, mode, bedrock);
+        // Task type and mode are not passed: the judge is task-agnostic, and in real-time
+        // mode there is no ground truth for them to qualify. Placeholder compliance is
+        // checked above by detectCredentialLeaks rather than asked of the model.
+        LlmJudge.JudgeResult judgeResult = LlmJudge.judgeWithoutGroundTruth(generated, llm);
 
         int confidenceScore = judgeResult.confidenceScore();
         suspectedHalls.addAll(judgeResult.hallucinatedSteps());

@@ -159,6 +159,8 @@ public final class EvalCase {
         JSONObject gt = o.optJSONObject("groundTruth");
         GroundTruth groundTruth = parseGroundTruth(gt != null ? gt : new JSONObject());
 
+        // Any `assertions` block still present in a dataset file is ignored: the LLM judge is
+        // now the only thing that decides a case.
         return new EvalCase(id, uiVariety, description, videoPath, targetUrl, mode, taskType,
                 expectation, expectedRejection, groundTruth);
     }

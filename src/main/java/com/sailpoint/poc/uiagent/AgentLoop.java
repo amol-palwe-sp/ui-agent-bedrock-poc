@@ -1,7 +1,7 @@
 package com.sailpoint.poc.uiagent;
 
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import com.sailpoint.poc.uiagent.replay.ScriptRecorder;
 import com.sailpoint.poc.uiagent.replay.TokenValues;

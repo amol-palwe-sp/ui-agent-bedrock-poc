@@ -5,7 +5,8 @@ import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.aggregation.AggregationVideoAnalysisPrompt;
 import com.sailpoint.poc.uiagent.aggregation.PaginationPattern;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.LlmClientFactory;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
@@ -137,7 +138,7 @@ public final class AggregationGenerateHandler implements HttpHandler {
                 push("LOG:WARN:Relevance check overridden by user — analysing anyway");
             } else {
                 push("LOG:INFO:Checking whether the video shows a UI workflow...");
-                relevance = new VideoRelevanceGate(config.relevance(), config.bedrock())
+                relevance = new VideoRelevanceGate(config.relevance(), LlmClientFactory.from(config))
                         .evaluate(frames);
 
                 if (relevance.isRejected()) {

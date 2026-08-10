@@ -15,6 +15,7 @@
   const evalCaseSelect     = document.getElementById('evalCaseSelect');
   const skipJudgeToggle    = document.getElementById('skipJudgeToggle');
   const skipJudgeBadge     = document.getElementById('skipJudgeBadge');
+  const skipJudgeWarning   = document.getElementById('skipJudgeWarning');
   const btnRunEval         = document.getElementById('btnRunEval');
   const btnRunEvalText     = document.getElementById('btnRunEvalText');
   const btnRunEvalSpinner  = document.getElementById('btnRunEvalSpinner');
@@ -41,6 +42,7 @@
         var on = skipJudgeToggle.checked;
         skipJudgeBadge.textContent = on ? 'ON' : 'OFF';
         skipJudgeBadge.className = 'toggle-badge ' + (on ? 'toggle-badge-on' : 'toggle-badge-off');
+        if (skipJudgeWarning) skipJudgeWarning.classList.toggle('hidden', !on);
       });
     }
   });
@@ -304,7 +306,9 @@
     var modelId     = report.modelId || '—';
     var total       = report.totalCases || 0;
     var passed      = report.passed || 0;
-    var avgScore    = report.averageScores ? (report.averageScores.overallScore || 0) : 0;
+    // null when the judge scored nothing, which is not the same as scoring zero.
+    var avgJudge    = report.averageScores ? report.averageScores.judgeOverall : null;
+    var avgLabel    = typeof avgJudge === 'number' ? 'avg judge ' + avgJudge.toFixed(2) : 'unscored';
     var bodyId      = 'eval-body-' + idx;
 
     // Header row
@@ -316,7 +320,7 @@
       '<div class="eval-report-title">' + esc(report.fileName || runAt) + '</div>' +
       '<div class="eval-report-meta">' +
         '<span>' + passed + '/' + total + ' passed</span>' +
-        '<span>avg ' + avgScore.toFixed(3) + '</span>' +
+        '<span>' + esc(avgLabel) + '</span>' +
         '<span style="color:var(--text-muted); font-size:11px;">' + esc(modelId.length > 40 ? modelId.slice(-40) : modelId) + '</span>' +
       '</div>' +
       '<span class="eval-pass-rate ' + prClass + '">' + passRatePct + '%</span>' +
@@ -360,22 +364,22 @@
     container.className = 'eval-metric-avg';
 
     var metrics = [
-      { key: 'stepRecall',       label: 'Step Recall'     },
-      { key: 'stepPrecision',    label: 'Step Precision'  },
-      { key: 'stepOrderScore',   label: 'Step Order'      },
-      { key: 'labelAccuracy',    label: 'Label Accuracy'  },
-      { key: 'placeholderScore', label: 'Placeholder'     },
-      { key: 'paginationScore',  label: 'Pagination'      },
-      { key: 'overallScore',     label: 'Overall'         },
+      { key: 'correctness',   label: 'Correctness'   },
+      { key: 'order',         label: 'Order'         },
+      { key: 'hallucination', label: 'Hallucination' },
+      { key: 'judgeOverall',  label: 'Judge Overall' },
     ];
 
     metrics.forEach(function (m) {
-      var val = typeof avg[m.key] === 'number' ? avg[m.key] : 0;
+      // Rendered as "—" rather than 0.00 when nothing was scored: a zero here would read
+      // as a terrible run when the truth is that the judge never returned a verdict.
+      var raw  = avg[m.key];
+      var text = typeof raw === 'number' ? raw.toFixed(2) : '—';
       var item = document.createElement('div');
       item.className = 'eval-metric-item';
       item.innerHTML =
         '<span class="eval-metric-name">' + esc(m.label) + '</span>' +
-        '<span class="eval-metric-value">' + val.toFixed(3) + '</span>';
+        '<span class="eval-metric-value">' + text + '</span>';
       container.appendChild(item);
     });
 
@@ -396,24 +400,27 @@
         '<th>Description</th>' +
         '<th>Type</th>' +
         '<th>Mode</th>' +
-        '<th>Overall Score</th>' +
-        '<th>Judge</th>' +
+        '<th>Judge Overall</th>' +
+        '<th>Correctness</th>' +
         '<th>Result</th>' +
         '<th>Issues</th>' +
       '</tr>';
 
     var tbody = document.createElement('tbody');
     cases.forEach(function (c) {
-      var metrics  = c.metrics  || {};
       var judge    = c.judgeScores || {};
-      var overall  = metrics.overallScore  || 0;
-      var jOverall = judge.overall         || 0;
       var passed   = c.passed;
+      // Scores are null when the judge never ran, so the bar is drawn empty and labelled
+      // rather than shown at 0%, which would look like a scored failure.
+      var overall  = typeof judge.overall     === 'number' ? judge.overall     : null;
+      var correct  = typeof judge.correctness === 'number' ? judge.correctness : null;
 
-      var fillClass = overall >= 0.7 ? 'eval-score-fill-good' : overall >= 0.5 ? 'eval-score-fill-mid' : 'eval-score-fill-bad';
-      var scorePct  = Math.round(overall * 100) + '%';
+      var fillClass = overall == null ? 'eval-score-fill-bad'
+        : overall >= 0.7 ? 'eval-score-fill-good'
+        : overall >= 0.5 ? 'eval-score-fill-mid' : 'eval-score-fill-bad';
+      var scorePct  = Math.round((overall || 0) * 100) + '%';
 
-      var issueCount = (c.issues || []).length + (c.hallucinatedSteps || []).length + (c.missingSteps || []).length;
+      var issueCount = (c.issues || []).length + (judge.issues || []).length;
 
       var tr = document.createElement('tr');
       tr.innerHTML =
@@ -424,10 +431,11 @@
         '<td>' +
           '<div class="eval-score-bar">' +
             '<div class="eval-score-track"><div class="eval-score-fill ' + fillClass + '" style="width:' + scorePct + '"></div></div>' +
-            '<span style="font-size:12px; font-weight:600; min-width:38px;">' + overall.toFixed(3) + '</span>' +
+            '<span style="font-size:12px; font-weight:600; min-width:38px;">' +
+              (overall == null ? '—' : overall.toFixed(2)) + '</span>' +
           '</div>' +
         '</td>' +
-        '<td style="font-size:12px; font-weight:600;">' + jOverall.toFixed(1) + '</td>' +
+        '<td style="font-size:12px; font-weight:600;">' + (correct == null ? '—' : correct.toFixed(2)) + '</td>' +
         '<td class="' + (passed ? 'eval-result-pass' : 'eval-result-fail') + '">' + (passed ? 'PASS' : 'FAIL') + '</td>' +
         '<td style="font-size:12px; color: var(--text-muted);">' + (issueCount > 0 ? issueCount + ' issue(s)' : '—') + '</td>';
 
@@ -452,12 +460,12 @@
   }
 
   function buildDetailRow(c, table) {
-    var metrics  = c.metrics      || {};
     var judge    = c.judgeScores  || {};
+    var verdict  = c.verdict      || {};
     var hsteps   = c.hallucinatedSteps || [];
     var msteps   = c.missingSteps      || [];
-    var missingPlaceholders = c.missingPlaceholders || [];
     var issues   = c.issues            || [];
+    var jIssues  = judge.issues        || [];
 
     var tr = document.createElement('tr');
     tr.className = 'hidden';
@@ -467,36 +475,41 @@
     td.style.background = '#fafbfc';
     td.style.padding = '12px 16px';
 
-    var html = '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; margin-bottom: 12px;">';
+    var html = '';
 
-    // Metric mini-grid
-    [
-      ['Step Recall',    metrics.stepRecall],
-      ['Step Precision', metrics.stepPrecision],
-      ['Step Order',     metrics.stepOrderScore],
-      ['Label Accuracy', metrics.labelAccuracyScore],
-      ['Placeholder',    metrics.placeholderScore],
-      ['Pagination',     metrics.paginationScore],
-    ].forEach(function (item) {
-      var val = typeof item[1] === 'number' ? item[1].toFixed(3) : '—';
-      html += '<div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">' +
-        esc(item[0]) + '</span><br><strong>' + val + '</strong></div>';
-    });
-    html += '</div>';
+    // Why the case landed where it did, stated before any numbers. A reviewer opening a
+    // failed row wants the reason, and for an unscored case there are no numbers to read.
+    if (verdict.failureReason) {
+      html += '<div style="margin-bottom:10px; font-size:12px; color:var(--error);"><strong>' +
+        esc(verdict.failureReason) + '</strong></div>';
+    }
+    if (verdict.judgeFailed) {
+      html += '<div style="margin-bottom:10px; font-size:12px; color:var(--text-muted);">' +
+        '⚠ The judge did not return a verdict, so this case was never scored. That is an ' +
+        'infrastructure failure, not a statement about the generated plan.</div>';
+    }
 
-    // Judge scores
+    // The judge grading itself. Surfaced prominently because it undermines the scores
+    // directly below it — the only signal this eval has left.
+    if (jIssues.length > 0) {
+      html += '<div style="margin-bottom:10px;"><strong style="font-size:12px; color:#856404;">' +
+        '⚠ Judge self-check (' + jIssues.length + '):</strong><ul style="margin:4px 0 0 18px; padding:0;">' +
+        jIssues.map(function (s) {
+          return '<li style="font-size:12px; color:#856404;">' + esc(s) + '</li>';
+        }).join('') + '</ul></div>';
+    }
+
     html += '<div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px;">';
     [
-      ['Judge Correct',   judge.correctness],
-      ['Judge Order',     judge.order],
-      ['Judge Halluc.',   judge.hallucination],
-      ['Judge Labels',    judge.labelQuality],
-      ['Judge Placeholder', judge.placeholder],
-      ['Judge Overall',   judge.overall],
+      ['Correctness',   judge.correctness,   '0.40'],
+      ['Order',         judge.order,         '0.30'],
+      ['Hallucination', judge.hallucination, '0.30'],
+      ['Overall',       judge.overall,       ''],
     ].forEach(function (item) {
-      var val = typeof item[1] === 'number' ? item[1].toFixed(1) : '—';
+      var val = typeof item[1] === 'number' ? item[1].toFixed(2) : '—';
       html += '<div><span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;">' +
-        esc(item[0]) + '</span><br><strong>' + val + '/10</strong></div>';
+        esc(item[0]) + (item[2] ? ' · w' + item[2] : '') +
+        '</span><br><strong>' + val + '</strong></div>';
     });
     html += '</div>';
 
@@ -504,21 +517,18 @@
       html += '<div style="font-size:12px; color:var(--text-muted); font-style:italic; margin-bottom:8px;">"' + esc(judge.reasoning) + '"</div>';
     }
 
+    // Quoted by the judge from its own comparison, so these are the evidence behind the
+    // scores above rather than a separate word-overlap opinion.
     if (hsteps.length > 0) {
-      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px;">🔴 Hallucinated steps (' + hsteps.length + '):</strong> ';
+      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px;">🔴 Invented, per the judge (' + hsteps.length + '):</strong> ';
       html += hsteps.map(function (s) { return '<span style="font-size:12px; color:#721c24;">' + esc(s) + '</span>'; }).join(' · ');
       html += '</div>';
     }
 
     if (msteps.length > 0) {
-      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px;">🟡 Missing steps (' + msteps.length + '):</strong> ';
+      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px;">🟡 Missing, per the judge (' + msteps.length + '):</strong> ';
       html += msteps.map(function (s) { return '<span style="font-size:12px; color:#856404;">' + esc(s) + '</span>'; }).join(' · ');
       html += '</div>';
-    }
-
-    if (missingPlaceholders.length > 0) {
-      html += '<div style="margin-bottom:6px;"><strong style="font-size:12px; color:var(--error);">🔑 Missing placeholders:</strong> ' +
-        missingPlaceholders.map(function (s) { return '<code>' + esc(s) + '</code>'; }).join(', ') + '</div>';
     }
 
     if (issues.length > 0) {
@@ -533,11 +543,13 @@
 
   function buildTooltip(c) {
     var lines = [];
-    var metrics = c.metrics || {};
-    if (metrics.stepRecall    != null) lines.push('Recall: '    + metrics.stepRecall.toFixed(3));
-    if (metrics.stepPrecision != null) lines.push('Precision: ' + metrics.stepPrecision.toFixed(3));
-    if ((c.hallucinatedSteps || []).length > 0) lines.push('Hallucinated: ' + c.hallucinatedSteps.join(', '));
-    if ((c.missingSteps      || []).length > 0) lines.push('Missing: '      + c.missingSteps.join(', '));
+    var judge = c.judgeScores || {};
+    var reason = (c.verdict || {}).failureReason;
+    if (reason) lines.push(reason);
+    if (typeof judge.correctness === 'number') lines.push('Correctness: ' + judge.correctness.toFixed(2));
+    if (typeof judge.overall     === 'number') lines.push('Overall: '     + judge.overall.toFixed(2));
+    if ((c.hallucinatedSteps || []).length > 0) lines.push('Invented: ' + c.hallucinatedSteps.join(', '));
+    if ((c.missingSteps      || []).length > 0) lines.push('Missing: '  + c.missingSteps.join(', '));
     return lines.join('\n');
   }
 

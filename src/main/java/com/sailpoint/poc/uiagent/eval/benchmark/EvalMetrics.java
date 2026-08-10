@@ -36,16 +36,22 @@ public final class EvalMetrics {
     private static final double W_PAGINATION      = 0.10;
 
     /**
-     * Per-condition pass thresholds.
+     * Reference lines for the word-overlap diagnostics. <strong>These do not gate anything.</strong>
      *
-     * <p>A case must clear each of these on its own rather than clearing an average, so a weak
-     * dimension cannot hide behind strong ones. Provisional values pending team sign-off.
+     * <p>They used to be pass thresholds. They aren't any more, because token overlap cannot
+     * tell two different actions apart: {@code "click the cancel button"} and
+     * {@code "click the accept button"} share three of four tokens and score 0.75, comfortably
+     * above any threshold loose enough to tolerate harmless rewording. A metric that matches
+     * the wrong button is not a safety check. Semantic comparison is the LLM judge's job, and
+     * the judge is now the only thing that decides a case — see
+     * {@link com.sailpoint.poc.uiagent.eval.shared.LlmJudge#MIN_OVERALL}.
+     *
+     * <p>These values survive only as the line the report draws when flagging a case worth
+     * eyeballing, and as a way to compare one run against the next.
      */
-    public static final double MIN_STEP_RECALL    = 0.70;
-    public static final double MIN_STEP_PRECISION = 0.70;
-    public static final double MIN_STEP_ORDER     = 0.80;
-    /** Judge scores are 0–10, so this is the equivalent of the 0.70 bar used for the others. */
-    public static final double MIN_JUDGE_OVERALL  = 7.0;
+    public static final double DIAG_STEP_RECALL_FLOOR    = 0.70;
+    public static final double DIAG_STEP_PRECISION_FLOOR = 0.70;
+    public static final double DIAG_STEP_ORDER_FLOOR     = 0.80;
 
     private static final Pattern EMAIL_PATTERN = Pattern.compile("[\\w._%+\\-]+@[\\w.\\-]+\\.[a-zA-Z]{2,}");
 
@@ -277,34 +283,36 @@ public final class EvalMetrics {
     }
 
     /**
-     * Computes the composite trend score across whichever metrics apply to this case.
+     * Computes the composite word-overlap score across whichever metrics apply.
      *
-     * <p>This is a movement indicator for tracking regressions between runs, <em>not</em> a
-     * pass/fail verdict — see {@link EvalResult#passed()}, which requires each condition to
-     * clear its own bar. A single blended number was previously the pass rule and it let a
-     * failing dimension hide behind strong ones.
+     * <p>A movement indicator for comparing one run against the next, never a verdict. The
+     * Stage 1 benchmark no longer computes it at all — the LLM judge decides those cases on
+     * its own — so this survives for the Stage 2 aggregation evaluator, which reports a
+     * script-generation score alongside a live execution result.
      *
-     * <p>Checks that do not apply to a case are excluded and the remaining weights are
-     * renormalised, so a skipped check neither helps nor hurts. Scoring a non-applicable
+     * <p>Checks that do not apply are passed as {@code null}; the remaining weights are
+     * renormalised so a skipped check neither helps nor hurts. Scoring a non-applicable
      * check as 0.0 was the old behaviour and it silently depressed every provisioning case.
      */
-    public static double computeOverallScore(EvalResult result) {
+    public static double computeOverallScore(double stepRecall, double stepPrecision,
+                                             double stepOrderScore,
+                                             Double placeholderScore, Double paginationScore) {
         double weightedSum = 0.0;
         double totalWeight = 0.0;
 
-        weightedSum += result.stepRecall()     * W_STEP_RECALL;
+        weightedSum += stepRecall     * W_STEP_RECALL;
         totalWeight += W_STEP_RECALL;
-        weightedSum += result.stepPrecision()  * W_STEP_PRECISION;
+        weightedSum += stepPrecision  * W_STEP_PRECISION;
         totalWeight += W_STEP_PRECISION;
-        weightedSum += result.stepOrderScore() * W_STEP_ORDER;
+        weightedSum += stepOrderScore * W_STEP_ORDER;
         totalWeight += W_STEP_ORDER;
 
-        if (result.placeholderApplicable()) {
-            weightedSum += result.placeholderScore() * W_PLACEHOLDER;
+        if (placeholderScore != null) {
+            weightedSum += placeholderScore * W_PLACEHOLDER;
             totalWeight += W_PLACEHOLDER;
         }
-        if (result.paginationApplicable()) {
-            weightedSum += result.paginationScore() * W_PAGINATION;
+        if (paginationScore != null) {
+            weightedSum += paginationScore * W_PAGINATION;
             totalWeight += W_PAGINATION;
         }
 
@@ -313,35 +321,10 @@ public final class EvalMetrics {
 
     // ── Detection helpers ─────────────────────────────────────────────────────
 
-    /**
-     * Returns steps in {@code generatedSteps} that do not match any GT step.
-     */
-    public static List<String> detectHallucinatedSteps(
-            List<String> gtSteps, List<String> generatedSteps) {
-        List<String> hallucinated = new ArrayList<>();
-        if (generatedSteps == null) return hallucinated;
-        for (String gen : generatedSteps) {
-            if (gtSteps == null || StepSimilarity.bestMatch(gen, gtSteps) < FUZZY_THRESHOLD) {
-                hallucinated.add(gen);
-            }
-        }
-        return hallucinated;
-    }
-
-    /**
-     * Returns GT steps not found in {@code generatedSteps}.
-     */
-    public static List<String> detectMissingSteps(
-            List<String> gtSteps, List<String> generatedSteps) {
-        List<String> missing = new ArrayList<>();
-        if (gtSteps == null) return missing;
-        for (String gt : gtSteps) {
-            if (generatedSteps == null || StepSimilarity.bestMatch(gt, generatedSteps) < FUZZY_THRESHOLD) {
-                missing.add(gt);
-            }
-        }
-        return missing;
-    }
+    // The step-level detectors that used to live here are gone. Deciding whether a generated
+    // step is missing or invented is a judgement about meaning, and token overlap cannot make
+    // it: it matched "click cancel" to "click accept". The judge now names both lists itself,
+    // quoting the actions it compared, which is evidence a reviewer can check.
 
     /**
      * Detects credential leaks in a navigation goal string produced by Claude in

@@ -355,7 +355,7 @@ public final class NetworkAggregator {
         String userMessage = "Map the fields in this sample record:\n\n" + sample;
 
         try {
-            BedrockAnthropicClient.InvokeResult result =
+            com.sailpoint.poc.uiagent.llm.InvokeResult result =
                     bedrock.invokeWithVision(systemPrompt, userMessage, null);
             accumulatedUsage = accumulatedUsage.add(result.usage());
 

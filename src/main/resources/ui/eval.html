@@ -112,6 +112,12 @@
               <span class="toggle-label" style="font-size:13px;">Skip LLM Judge</span>
               <span class="toggle-badge toggle-badge-off" id="skipJudgeBadge">OFF</span>
             </label>
+            <p id="skipJudgeWarning" class="hidden"
+               style="margin:0; font-size:12px; color:var(--error); max-width:320px;">
+              The judge is the only pass condition. With it skipped, every case with ground
+              truth is reported unscored — the run checks that the pipeline executes, not
+              whether its output is any good.
+            </p>
           </div>
         </div>
 

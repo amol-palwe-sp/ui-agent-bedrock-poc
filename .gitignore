@@ -2,6 +2,8 @@
 .gradle/
 build/
 
+.DS_Store
+
 # IDE
 .idea/
 *.iml
@@ -9,6 +11,21 @@ build/
 
 # Playwright browser downloads
 ~/.cache/ms-playwright/
+
+# Python eval harness (evals/) — the venv is ~500MB and machine-specific.
+# Recreate with: python3.12 -m venv evals/.venv && pip install sp_agents pytest-xdist
+evals/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.python-version
+
+# Eval outputs — regenerated on every run
+eval-reports/
+evals/reports/
+
+# Dumped gateway request bodies — multi-MB base64 frames, regenerate with dumpProxyRequest
+proxy-requests/
 
 agent-run.jsonl
 

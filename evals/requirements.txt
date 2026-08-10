@@ -1,0 +1,18 @@
+# Python dependencies for the Stage 1 judge harness.
+#
+# sp_agents is published to SailPoint's internal Artifactory, not PyPI, so
+# installing it needs the internal index and credentials:
+#
+#   pip install -r evals/requirements.txt --index-url \
+#     "https://${ARTIFACTORY_USER}:${ARTIFACTORY_TOKEN}@sailpoint.jfrog.io/artifactory/api/pypi/sp-pypi-prod/simple"
+#
+# It pulls in langchain, langchain-aws, langsmith and pydantic transitively;
+# they are deliberately not pinned here so sp_agents keeps control of them.
+sp_agents==0.12.4
+
+# Required by the sp-evals CLI, which always passes --no-cov and -n.
+pytest-cov>=7.1.0
+pytest-xdist>=3.8.0
+
+# Lints against evals/ruff.toml, which mirrors the sp-agents configuration.
+ruff>=0.15.0

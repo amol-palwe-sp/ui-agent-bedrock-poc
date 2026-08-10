@@ -115,7 +115,7 @@ Each failed pre-check adds a **warning** and reduces the final score (up to **40
 - Full **generated navigation goal** string
 - Pagination pattern (AGGREGATION only)
 
-The judge returns a **confidence_score (0–100)** and sub-scores (correctness, order, hallucination, label quality, placeholder). Instructions are tuned to give a **holistic** assessment — not noisy warnings about individual labels, `UNKNOWN` passwords, or assumed missing navigation.
+The judge returns a **confidence_score (0–100)** and the same three sub-scores as benchmark mode on a 0.0–1.0 scale: correctness, order, hallucination. Instructions are tuned to give a **holistic** assessment — not noisy warnings about individual labels, `UNKNOWN` passwords, or assumed missing navigation. Placeholder compliance is checked mechanically by `EvalMetrics.detectCredentialLeaks` rather than asked of the model.
 
 **Placeholder sub-score:** scored only for **AGGREGATION + PLACEHOLDER**. For PROVISIONING and LITERAL, placeholder is treated as N/A (score 10).
 
@@ -154,7 +154,9 @@ Configuration (`application.properties`):
 
 - `eval.benchmarks.path` — path to `benchmarks.json`
 - `eval.output.dir` — where `eval-report_{timestamp}.json` is written
-- `eval.skip.judge` — skip LLM judge for faster/cheaper runs
+- `eval.skip.judge` — skips the LLM judge. The judge is the only pass condition, so this
+  checks that the pipeline runs and nothing else: every case with ground truth comes back
+  unscored.
 
 ### Ground truth
 
@@ -162,7 +164,7 @@ Each entry in `benchmarks.json` defines:
 
 - Video path, target URL, task type, mode
 - **Ground truth navigation goal** (full assembled string)
-- Ordered **steps** (for automated metrics)
+- Ordered **steps** (reported for review; the judge scores the goal string, not this list)
 - **Pagination pattern** (AGGREGATION only)
 - **Token definitions** (PLACEHOLDER cases)
 
@@ -175,38 +177,44 @@ Cases are loaded dynamically in the Eval UI (`GET /api/eval/cases`) — no hardc
 3. Call Claude:
    - **PROVISIONING** → `VideoToGoalPrompt` + `GoalExtractor`
    - **AGGREGATION** → `VideoAnalysisPrompt` + `VideoAnalysisResult.parse`
-4. **Automated metrics** (no LLM) — compare generated steps vs ground truth steps
-5. **LLM judge** (optional) — compares **ground truth goal** vs **generated goal** (not step-by-step lists)
-6. Build `EvalResult` → aggregate **EvalReport**
+4. **LLM judge** — compares **ground truth goal** vs **generated goal** (not step-by-step lists)
+5. Build `EvalResult` → aggregate **EvalReport**
 
-### Automated metrics (benchmark)
+### LLM judge — the only pass condition
 
-Fuzzy matching uses **Jaccard similarity** on tokenized step text (threshold **0.6** via `StepSimilarity` / `FingerprintMatcher`).
+Word-overlap step metrics and per-case Layer 1 assertions used to gate alongside the judge.
+Both are gone from Stage 1: token overlap cannot tell two different actions apart, so it
+matched `click the cancel button` to `click the accept button` at 0.75 and called it a pass.
+See `prompts/04_LLM_JUDGE.md` for the full contract.
 
-| Metric | Weight (AGGREGATION) | Weight (PROVISIONING) | What it measures |
-|--------|----------------------|------------------------|------------------|
-| Step recall | 30% | **50%** | % of GT steps found in output |
-| Step precision | 20% | 20% | % of output steps that match GT (low = hallucinations) |
-| Step order | 15% | 15% | Kendall Tau on matched step order |
-| Label accuracy | 15% | 15% | Average similarity on matched pairs |
-| Placeholder | 10% | **0%** (skipped) | AGGREGATION+PLACEHOLDER only: `{Token}` vs literals |
-| Pagination | 10% | **0%** (skipped) | AGGREGATION only: type + selector + description |
+The judge compares two **navigation goal strings** — the ground truth goal from the dataset
+and the generated goal from Claude — and scores three dimensions on a **0.0–1.0** scale:
 
-**Pass threshold:** `overallScore >= 0.70`
+| Dimension | Weight | What it measures |
+|-----------|--------|------------------|
+| Correctness | 0.40 | Does the generated goal cover the same workflow and reach the same destination? |
+| Order | 0.30 | Are critical actions in the ground-truth sequence? |
+| Hallucination | 0.30 | 1.0 means nothing was invented |
 
-**Special handling:**
+`overall = 0.40*correctness + 0.30*order + 0.30*hallucination`
 
-- **Halt clause** filtered out of generated steps before metrics (system-appended, not in GT).
-- **PROVISIONING:** pagination and placeholder weights roll into step recall (50% total).
+**Pass threshold:** `overall >= 0.70` **and** `correctness >= 0.70`. Correctness gates on its
+own so a plan that reaches the wrong destination cannot pass on good ordering alone.
 
-### LLM judge (benchmark)
+`LlmJudge` recomputes both the composite and the verdict from the three dimensions rather
+than trusting the model, and records any disagreement in `judgeIssues`. A failed judge call
+sets `judgeFailed` and the case is reported **unscored** with null scores — not zero, which
+would read as a quality failure when the truth is that nothing was measured.
 
-Compares two **navigation goal strings**:
+Two non-quality conditions still fail a scored case, because each means no verdict exists:
+the triage gate rejected a usable video, or the run errored before producing a plan.
 
-- Ground truth goal (from `benchmarks.json`)
-- Generated goal (from Claude)
+`INVALID` and `UNWORKABLE` cases are never judged — there is no ground truth to compare
+against — and pass by refusing or flagging the input.
 
-Scores 0–10 on correctness, order, hallucination, label quality, placeholder (AGGREGATION+PLACEHOLDER only), and overall — plus short reasoning.
+**Special handling:** the halt clause (`this completes all steps — do not perform any further
+actions`) is stripped from generated steps before reporting, since it is appended by the
+prompt and is never part of the authored plan.
 
 ---
 
@@ -243,7 +251,7 @@ This is why benchmark **placeholder** and **real-time placeholder** checks apply
 |----------|---------|-------------|
 | `eval.benchmarks.path` | `./src/main/resources/eval/benchmarks.json` | Ground truth cases |
 | `eval.output.dir` | `./eval-reports` | Benchmark report output |
-| `eval.skip.judge` | `false` | Skip LLM judge in CLI benchmark runs |
+| `eval.skip.judge` | `false` | Skip LLM judge in CLI benchmark runs — leaves every scored case unscored |
 
 ---
 

@@ -94,6 +94,16 @@ task runEval(type: JavaExec) {
     }
 }
 
+task dumpProxyRequest(type: JavaExec) {
+    group       = 'application'
+    description = 'Write the exact GenAI gateway request body for one video to a file, without sending it'
+    mainClass   = 'com.sailpoint.poc.uiagent.llm.ProxyRequestDumper'
+    classpath   = sourceSets.main.runtimeClasspath
+    if (project.hasProperty('args')) {
+        args project.property('args').split(' ')
+    }
+}
+
 task runFullAggregationEval(type: JavaExec) {
     group       = 'application'
     description = 'Run full aggregation eval: video-to-script + live execution, N times per system'

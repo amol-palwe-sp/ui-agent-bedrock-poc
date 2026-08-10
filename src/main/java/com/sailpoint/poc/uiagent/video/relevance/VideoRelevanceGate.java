@@ -2,8 +2,10 @@ package com.sailpoint.poc.uiagent.video.relevance;
 
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.RelevanceConfig;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.LlmClient;
+import com.sailpoint.poc.uiagent.llm.LlmClientFactory;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
@@ -16,7 +18,7 @@ import java.util.List;
  * evenly spaced sample of the frames that were already extracted — roughly a tenth of the
  * images the main call sends — so triage costs a small fraction of the work it can avoid.
  *
- * <p>The gate fails open. Any error contacting Bedrock, or any response it cannot parse,
+ * <p>The gate fails open. Any error reaching the model, or any response it cannot parse,
  * yields an accept: an outage must degrade the guardrail, not the product.
  */
 public final class VideoRelevanceGate {
@@ -24,11 +26,11 @@ public final class VideoRelevanceGate {
     private static final String CATEGORY_USABLE = "USABLE";
 
     private final RelevanceConfig config;
-    private final BedrockConfig bedrock;
+    private final LlmClientFactory clients;
 
-    public VideoRelevanceGate(RelevanceConfig config, BedrockConfig bedrock) {
+    public VideoRelevanceGate(RelevanceConfig config, LlmClientFactory clients) {
         this.config = config;
-        this.bedrock = bedrock;
+        this.clients = clients;
     }
 
     /**
@@ -46,12 +48,11 @@ public final class VideoRelevanceGate {
         }
 
         List<byte[]> sample = sampleEvenly(frames, config.sampleFrames());
-        String modelId = config.resolveModelId(bedrock.modelId());
+        String modelId = config.resolveModelId(clients.defaultModelId());
 
-        try (BedrockAnthropicClient client = new BedrockAnthropicClient(
-                bedrock.region(), bedrock.profile(), modelId, config.maxTokens(), 0.0)) {
+        try (LlmClient client = clients.create("triage", modelId, config.maxTokens(), 0.0)) {
 
-            BedrockAnthropicClient.InvokeResult response = client.invokeWithMultipleImages(
+            InvokeResult response = client.invokeWithMultipleImages(
                     VideoRelevancePrompt.SYSTEM_PROMPT, VideoRelevancePrompt.USER_PROMPT, sample);
 
             return interpret(response.text(), response.usage());

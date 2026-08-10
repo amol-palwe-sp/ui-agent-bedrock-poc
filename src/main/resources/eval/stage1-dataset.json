@@ -8,7 +8,32 @@
     "Login fixtures (where a page needs them): test.user@demo.local / Demo!Pass123.",
     "`uiVariety` is the axis we report on: field:*, nav:*, paging:*, discovery:*, tricky:*, look:*, language:*.",
     "`mode` = PLACEHOLDER means credentials must be tokenised in the output (secret-leak hard gate applies);",
-    "LITERAL means the on-screen demo values are expected verbatim."
+    "LITERAL means the on-screen demo values are expected verbatim.",
+    "",
+    "`expectation` = HAPPY (default, omitted) | INCORRECT | INVALID | UNWORKABLE.",
+    "HAPPY and INCORRECT are scored against groundTruth.steps. INVALID and UNWORKABLE have no",
+    "steps to score: they pass by being refused or flagged, and fail by producing a confident plan.",
+    "`expectedRejection` names the triage category we expect (see RejectionCategory); it is a",
+    "diagnostic only - refusing at all is the requirement, naming the right reason is a bonus.",
+    "",
+    "`assertions` is LAYER 1 - hard facts with a definite right answer, checked by code, no judgement.",
+    "  exactStepCount / minStepCount / maxStepCount - how many steps the plan must have.",
+    "  requiredSteps        - each phrase must appear in some generated step (normalised containment).",
+    "  forbiddenSteps       - no generated step may contain the phrase. Use for the wrong-button",
+    "                         cases and for detours the plan is supposed to leave out.",
+    "  requiredPlaceholders - tokens that must be emitted. Auto-added from `tokens` in PLACEHOLDER",
+    "                         mode, so you only list extras here.",
+    "Assertions do NOT use word overlap: \\\"click the cancel button\\\" and \\\"click the accept button\\\"",
+    "score 0.75 on token overlap, so overlap cannot be trusted to tell two actions apart. Semantic",
+    "comparison is LAYER 2, the LLM judge. Prefer exactStepCount where the count is genuinely",
+    "unambiguous and min/max where the model may reasonably merge a focus-click into the typing.",
+    "",
+    "QUOTING IN `steps`: after a value verb (enter/type/input/fill/set/select/choose/search for)",
+    "a quoted run is treated as the value the user supplied and is ignored when matching, so",
+    "`enter \"Ada\"` and `enter \"Bob\"` are the same step. After any other verb a quoted run is the",
+    "target's label and IS compared. Quote characters themselves never affect matching, so quoting",
+    "a label is optional - but do not quote a label after a value verb, or the label will be",
+    "discarded and the step will match every other step with the same verb and target."
   ],
   "benchmarks": [
     {
@@ -19,6 +44,11 @@
       "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Sign in"],
+        "forbiddenSteps": ["Cancel", "Forgot password"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
         "steps": [
@@ -41,6 +71,10 @@
       "targetUrl": "http://localhost:4599/a-discovery/div-role-widgets.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Username", "Notes", "Submit"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"testRPA001\" in the Username field, then enter \"this is dummy app\" in the Notes area, then click the Submit button this completes all steps — do not perform any further actions",
         "steps": [
@@ -60,6 +94,11 @@
       "targetUrl": "http://localhost:4599/a-discovery/dup-labels.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 1,
+        "requiredSteps": ["Panel B"],
+        "forbiddenSteps": ["Panel A"]
+      },
       "groundTruth": {
         "navigationGoal": "click the Panel B Next button this completes all steps — do not perform any further actions",
         "steps": [
@@ -77,6 +116,10 @@
       "targetUrl": "http://localhost:4599/a-fields/text-inputs.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 4,
+        "requiredSteps": ["First name", "Last name", "Email", "Save"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"Test\" in the First name field, then enter \"RPA\" in the Last name field, then enter \"rpa@tesst.com\" in the Email field, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
@@ -97,6 +140,10 @@
       "targetUrl": "http://localhost:4599/a-fields/textarea-richtext.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Description", "Save"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"tewst appd\" in the Description field, then enter \"andbcj test text\" in the Rich notes area, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
@@ -116,6 +163,10 @@
       "targetUrl": "http://localhost:4599/a-fields/native-select.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 2,
+        "requiredSteps": ["Marketing", "Department", "Save"]
+      },
       "groundTruth": {
         "navigationGoal": "select \"Marketing\" from the Department dropdown, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
@@ -134,6 +185,11 @@
       "targetUrl": "http://localhost:4599/a-fields/aria-combobox-select.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 2,
+        "maxStepCount": 3,
+        "requiredSteps": ["Finance", "Save"]
+      },
       "groundTruth": {
         "navigationGoal": "click Select a department..., select \"Finance\" from the Team dropdown, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
@@ -149,15 +205,19 @@
       "id": "s1_typeahead",
       "uiVariety": "field:typeahead",
       "description": "Type-ahead autocomplete - type, then pick a filtered option",
-      "videoPath": "",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/typeahead-autocomplete.mp4",
       "targetUrl": "http://localhost:4599/a-fields/typeahead-autocomplete.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Marketing", "Save"]
+      },
       "groundTruth": {
-        "navigationGoal": "enter \"eng\" in the Team search field, then click the Engineering option, then click the Save button this completes all steps — do not perform any further actions",
+        "navigationGoal": "enter \"e\" in the Team search field, then click the Marketing option, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
-          "enter \"eng\" in the Team search field",
-          "click the Engineering option",
+          "enter \"e\" in the Team search field",
+          "click the Marketing option",
           "click the Save button"
         ],
         "paginationPattern": null,
@@ -168,15 +228,19 @@
       "id": "s1_cascading_dropdowns",
       "uiVariety": "field:cascading-dropdowns",
       "description": "Dependent dropdowns (country -> state)",
-      "videoPath": "",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/cascading-dropdowns.mp4",
       "targetUrl": "http://localhost:4599/a-fields/cascading-dropdowns.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Country", "State", "Save"]
+      },
       "groundTruth": {
-        "navigationGoal": "select \"United States\" from the Country dropdown, then select \"California\" from the State dropdown, then click the Save button this completes all steps — do not perform any further actions",
+        "navigationGoal": "select \"United States\" from the Country dropdown, then select \"Texas\" from the State dropdown, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
           "select \"United States\" from the Country dropdown",
-          "select \"California\" from the State dropdown",
+          "select \"Texas\" from the State dropdown",
           "click the Save button"
         ],
         "paginationPattern": null,
@@ -187,15 +251,20 @@
       "id": "s1_checkbox_group",
       "uiVariety": "field:checkbox-group",
       "description": "Multiple checkboxes in a group",
-      "videoPath": "",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/checkbox-group.mp4",
       "targetUrl": "http://localhost:4599/a-fields/checkbox-group.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Email", "Slack", "Save"],
+        "forbiddenSteps": ["SMS"]
+      },
       "groundTruth": {
-        "navigationGoal": "check the \"Email\" notification option, then check the \"SMS\" notification option, then click the Save button this completes all steps — do not perform any further actions",
+        "navigationGoal": "check the \"Email\" checkbox, then check the \"Slack\" checkbox, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
-          "check the \"Email\" notification option",
-          "check the \"SMS\" notification option",
+          "check the \"Email\" checkbox",
+          "check the \"Slack\" checkbox",
           "click the Save button"
         ],
         "paginationPattern": null,
@@ -206,14 +275,18 @@
       "id": "s1_radio_group",
       "uiVariety": "field:radio-group",
       "description": "Radio-button group",
-      "videoPath": "",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/radio-group.mp4",
       "targetUrl": "http://localhost:4599/a-fields/radio-group.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 2,
+        "requiredSteps": ["Enterprise", "Continue"]
+      },
       "groundTruth": {
-        "navigationGoal": "select the \"Premium\" plan, then click the Continue button this completes all steps — do not perform any further actions",
+        "navigationGoal": "click \"Enterprise\" option, then click the Continue button this completes all steps — do not perform any further actions",
         "steps": [
-          "select the \"Premium\" plan",
+          "click \"Enterprise\" option",
           "click the Continue button"
         ],
         "paginationPattern": null,
@@ -224,14 +297,18 @@
       "id": "s1_toggle_switch",
       "uiVariety": "field:toggle",
       "description": "role=switch toggle",
-      "videoPath": "",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/toggle-switch.mp4",
       "targetUrl": "http://localhost:4599/a-fields/toggle-switch.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 2,
+        "requiredSteps": ["Enable notifications", "Save"]
+      },
       "groundTruth": {
-        "navigationGoal": "turn on the \"Enable notifications\" toggle, then click the Save button this completes all steps — do not perform any further actions",
+        "navigationGoal": "click \"Enable notifications\" toggle, then click the Save button this completes all steps — do not perform any further actions",
         "steps": [
-          "turn on the \"Enable notifications\" toggle",
+          "click \"Enable notifications\" toggle",
           "click the Save button"
         ],
         "paginationPattern": null,
@@ -583,6 +660,10 @@
       "targetUrl": "http://localhost:4599/b-navigation/accordion-tree-nav.html",
       "mode": "LITERAL",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Administration", "Users", "Add"]
+      },
       "groundTruth": {
         "navigationGoal": "expand the Administration section, then click Users, then click the Add button this completes all steps — do not perform any further actions",
         "steps": [
@@ -881,6 +962,12 @@
       "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "_assertionNote": "Real-system flows are long and the model may reasonably merge a focus-click into the typing that follows, so the count is bounded rather than pinned. The terminal Create is asserted outright: dropping it is the silent failure that leaves the user uncreated.",
+      "assertions": {
+        "minStepCount": 10,
+        "maxStepCount": 15,
+        "requiredSteps": ["Sign In", "Create"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Username or Email Address field, then click Next button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Create button, then enter \"{Login}\" in the Login field, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{Email2}\" in the Email field, then check the \"{AIClassifierCheckbox}\" checkbox, then check the \"{AnalyticsAdminCheckbox}\" checkbox, then select \"{Designation}\" from the Designation dropdown, then click Create button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -921,6 +1008,11 @@
       "targetUrl": "https://admin.google.com/ac/users",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 8,
+        "maxStepCount": 12,
+        "requiredSteps": ["Add new user", "DONE"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add new user link, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{PrimaryEmail}\" in the Primary email field, then click ADD NEW USER button, then click DONE button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -953,6 +1045,12 @@
       "targetUrl": "https://admin.google.com/ac/users",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 8,
+        "maxStepCount": 12,
+        "requiredSteps": ["REACTIVATE"],
+        "forbiddenSteps": ["Suspend", "Delete"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email or phone field, then click Next button, then enter \"{Password}\" in the Enter your password field, then click Next button, then click Add a filter, then enter \"{Filter}\" in the filter field, then click First name starts with \"{Filter}\" option, then click Anand Joshi link, then click REACTIVATE, then click REACTIVATE button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -983,6 +1081,11 @@
       "targetUrl": "https://sailpoint-uat.coupahost.com/user/list",
       "mode": "PLACEHOLDER",
       "taskType": "AGGREGATION",
+      "assertions": {
+        "minStepCount": 4,
+        "maxStepCount": 8,
+        "requiredSteps": ["Sign In"]
+      },
       "groundTruth": {
         "navigationGoal": "navigate to https://sailpoint-uat.coupahost.com/user/list in the address bar, then wait for redirect to login page at https://sailpoint-uat.coupahost.com/sessions/new, then enter \"{Email}\" in the Username or Email Address field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Sign In button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1012,6 +1115,11 @@
       "targetUrl": "https://admin.google.com/ac/users",
       "mode": "PLACEHOLDER",
       "taskType": "AGGREGATION",
+      "assertions": {
+        "minStepCount": 4,
+        "maxStepCount": 8,
+        "requiredSteps": ["Next"]
+      },
       "groundTruth": {
         "navigationGoal": "click the Email or phone field, then enter \"{Email}\" in the Email or phone field, then click the Next button, then enter \"{Password}\" in the Enter your password field, then click the Next button, then wait for the Google Admin console to load and navigate to the Users list page this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1041,6 +1149,11 @@
       "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 9,
+        "maxStepCount": 14,
+        "requiredSteps": ["Log In", "New Employee", "Save"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click Log In button, then click No Thanks button, then click People link, then click New Employee button, then click Add Anyway button, then enter \"{FirstName}\" in the First Name* field, then enter \"{LastName}\" in the Last Name* field, then select \"{Department}\" from the Department* dropdown, then select \"{Division}\" from the Division* dropdown, then click Save button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1076,6 +1189,11 @@
       "targetUrl": "https://admin.webex.com/overview",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 10,
+        "maxStepCount": 15,
+        "requiredSteps": ["Add users"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign in button, then click Users link, then click Add users button, then enter \"{FirstName}\" in the First name field, then enter \"{LastName}\" in the Last name field, then enter \"{UserEmail}\" in the Email address field, then click Next button, then click Next button, then click Add users button, then click Close button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1111,6 +1229,11 @@
       "targetUrl": "https://sailpoint.securelinkcloud.net/ui/login",
       "mode": "PLACEHOLDER",
       "taskType": "PROVISIONING",
+      "assertions": {
+        "minStepCount": 11,
+        "maxStepCount": 18,
+        "requiredSteps": ["USER MANAGEMENT", "Add New User", "Create User"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{UserId}\" in the User ID field, then click Next button, then enter \"{Password}\" in the Password field, then click Next button, then click USER MANAGEMENT, then click Add New User button, then enter \"{NewUserId}\" in the User ID field, then click Name field, then enter \"{Name}\" in the Name field, then click Email field, then enter \"{Email}\" in the Email field, then click Domain Name dropdown, then click imprivata.com option, then check the \"User Group\" checkbox to select all user groups, then check the \"HelpDesk Administrator\" checkbox, then click Create User button this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1149,6 +1272,11 @@
       "targetUrl": "https://sailpointtest.bamboohr.com/login.php?r=%2Fhome%2F",
       "mode": "PLACEHOLDER",
       "taskType": "AGGREGATION",
+      "assertions": {
+        "minStepCount": 4,
+        "maxStepCount": 7,
+        "requiredSteps": ["Log In", "People"]
+      },
       "groundTruth": {
         "navigationGoal": "enter \"{Email}\" in the Email Address field, then enter \"{Password}\" in the Password field, then click the Log In button, then click the Yes, Trust this Browser button, then click People in the left navigation menu this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1177,6 +1305,11 @@
       "targetUrl": "https://admin.webex.com/overview",
       "mode": "PLACEHOLDER",
       "taskType": "AGGREGATION",
+      "assertions": {
+        "minStepCount": 4,
+        "maxStepCount": 8,
+        "requiredSteps": ["Sign In", "Users"]
+      },
       "groundTruth": {
         "navigationGoal": "navigate to https://admin.webex.com/overview in the address bar, then enter \"{Email}\" in the Email Address field, then click Sign In button, then enter \"{Password}\" in the Password field, then click Sign In button, then click Users in the left navigation menu this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1206,6 +1339,11 @@
       "targetUrl": "http://sailpoint.securelinkcloud.net/ui/user/list",
       "mode": "PLACEHOLDER",
       "taskType": "AGGREGATION",
+      "assertions": {
+        "minStepCount": 4,
+        "maxStepCount": 8,
+        "requiredSteps": ["USER MANAGEMENT"]
+      },
       "groundTruth": {
         "navigationGoal": "navigate to \"http://sailpoint.securelinkcloud.net/ui/user/list\" in the address bar, then enter \"{UserId}\" in the User ID field, then click the Next button, then enter \"{Password}\" in the Password field, then click the Next button, then click the USER MANAGEMENT icon in the left sidebar this completes all steps — do not perform any further actions ",
         "steps": [
@@ -1226,6 +1364,271 @@
           { "name": "Password", "label": "Password field",        "type": "password" }
         ]
       }
+    },
+
+    {
+      "_section": "UNHAPPY 4a - INCORRECT: a real recording of a flawed run. A plan is still expected, matching the INTENDED task. Ground truth deliberately excludes the mistakes, so faithfully transcribing them shows up as lost precision. Rejecting these outright is a failure.",
+      "id": "u4a_typo_corrected",
+      "uiVariety": "incorrect:typed-wrong-then-fixed",
+      "description": "Types a wrong username, clears it, retypes the correct one",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/typed-wrong-then-fixed.mp4",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "INCORRECT",
+      "_assertionNote": "The exact count is the whole test here: the correction was two extra on-screen actions, so a 5-step plan means the mistake was transcribed rather than understood.",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Sign in"],
+        "forbiddenSteps": ["clear", "delete", "retype"]
+      },
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"{Email}\" in the Email field",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign in button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email field",    "type": "email"    },
+          { "name": "Password", "label": "Password field", "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "u4a_unrelated_tab",
+      "uiVariety": "incorrect:tab-detour",
+      "description": "Switches to an unrelated tab mid-task and comes back",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/tab-detour.mp4",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "INCORRECT",
+      "assertions": {
+        "exactStepCount": 3,
+        "requiredSteps": ["Sign in"],
+        "forbiddenSteps": ["tab", "switch"]
+      },
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"{Email}\" in the Email field",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign in button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email field",    "type": "email"    },
+          { "name": "Password", "label": "Password field", "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "u4a_wrong_button_back",
+      "uiVariety": "incorrect:wrong-button-then-back",
+      "description": "Clicks the wrong button, then uses browser Back to return",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "INCORRECT",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"{Email}\" in the Email field",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign in button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email field",    "type": "email"    },
+          { "name": "Password", "label": "Password field", "type": "password" }
+        ]
+      }
+    },
+    {
+      "id": "u4a_duplicate_action",
+      "uiVariety": "incorrect:repeated-action",
+      "description": "Accidentally performs the same click twice",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "INCORRECT",
+      "groundTruth": {
+        "navigationGoal": "enter \"{Email}\" in the Email field, then enter \"{Password}\" in the Password field, then click the Sign in button this completes all steps — do not perform any further actions",
+        "steps": [
+          "enter \"{Email}\" in the Email field",
+          "enter \"{Password}\" in the Password field",
+          "click the Sign in button"
+        ],
+        "paginationPattern": null,
+        "tokens": [
+          { "name": "Email",    "label": "Email field",    "type": "email"    },
+          { "name": "Password", "label": "Password field", "type": "password" }
+        ]
+      }
+    },
+
+    {
+      "_section": "UNHAPPY 4b - INVALID: nothing here to convert. The only correct outcome is a refusal with a reason; ANY plan is an automatic fail. `expectedRejection` records the triage category we expect, and is reported as a diagnostic only - refusing at all is the requirement, naming the exact reason is a bonus. Most of these need no screen recording and can simply be generated.",
+      "id": "u4b_ide_recording",
+      "uiVariety": "invalid:not-a-web-ui",
+      "description": "Screen recording of an IDE, not a browser",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/not-a-web-ui.mp4",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NOT_A_WEB_UI",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_terminal_recording",
+      "uiVariety": "invalid:not-a-web-ui",
+      "description": "Screen recording of a terminal session",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/Dummy_Video.mp4",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NOT_A_WEB_UI",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_webcam_footage",
+      "uiVariety": "invalid:not-a-screen-recording",
+      "description": "Webcam footage of a person, not a screen capture",
+      "videoPath": "",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NOT_A_SCREEN_RECORDING",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_slideshow",
+      "uiVariety": "invalid:not-a-screen-recording",
+      "description": "A slideshow of still screenshots rather than a recording",
+      "videoPath": "",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NOT_A_SCREEN_RECORDING",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_static_page",
+      "uiVariety": "invalid:no-interactions",
+      "description": "A web page sits there with no clicks, typing or navigation",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NO_INTERACTIONS",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_consumer_site",
+      "uiVariety": "invalid:out-of-domain",
+      "description": "A real web app, but consumer shopping rather than an admin console",
+      "videoPath": "",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "OUT_OF_DOMAIN",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_blank_screen",
+      "uiVariety": "invalid:no-interactions",
+      "description": "Blank or black screen throughout",
+      "videoPath": "",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NO_INTERACTIONS",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4b_too_short",
+      "uiVariety": "invalid:too-short",
+      "description": "One or two seconds, nothing meaningful happens",
+      "videoPath": "",
+      "targetUrl": "",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "INVALID",
+      "expectedRejection": "NO_INTERACTIONS",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+
+    {
+      "_section": "UNHAPPY 4c - UNWORKABLE: the right task, but captured too poorly to read reliably. Correct outcome is a refusal, or a plan flagged low-confidence with the unreadable parts called out. The failure to catch is a CONFIDENT plan containing invented labels. Each of these is a re-record of a task we already have, so the intended answer is already known.",
+      "id": "u4c_low_resolution",
+      "uiVariety": "unworkable:low-resolution",
+      "description": "Correct login task, captured at very low resolution",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "UNWORKABLE",
+      "expectedRejection": "UNREADABLE",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4c_fast_scroll",
+      "uiVariety": "unworkable:fast-scrolling",
+      "description": "Correct aggregation task, content flies past between frames",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/c-paging/infinite-scroll.html",
+      "mode": "LITERAL",
+      "taskType": "AGGREGATION",
+      "expectation": "UNWORKABLE",
+      "expectedRejection": "UNREADABLE",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4c_rapid_zoom",
+      "uiVariety": "unworkable:rapid-zoom",
+      "description": "Correct task, but the view zooms in and out rapidly throughout",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "UNWORKABLE",
+      "expectedRejection": "UNREADABLE",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4c_tiny_low_contrast",
+      "uiVariety": "unworkable:tiny-low-contrast",
+      "description": "Correct task, but the text is tiny and low contrast",
+      "videoPath": "/Users/amol.palwe/Desktop/DisconnectedApps/Videos/harness/tiny-low-contrast.mp4",
+      "targetUrl": "http://localhost:4599/f-viewport/low-contrast-tiny-text.html",
+      "mode": "LITERAL",
+      "taskType": "PROVISIONING",
+      "expectation": "UNWORKABLE",
+      "expectedRejection": "UNREADABLE",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
+    },
+    {
+      "id": "u4c_heavy_compression",
+      "uiVariety": "unworkable:heavy-compression",
+      "description": "Correct task, heavily compressed so labels smear",
+      "videoPath": "",
+      "targetUrl": "http://localhost:4599/a-discovery/semantic-form.html",
+      "mode": "PLACEHOLDER",
+      "taskType": "PROVISIONING",
+      "expectation": "UNWORKABLE",
+      "expectedRejection": "UNREADABLE",
+      "groundTruth": { "navigationGoal": "", "steps": [], "paginationPattern": null, "tokens": [] }
     }
   ]
 }

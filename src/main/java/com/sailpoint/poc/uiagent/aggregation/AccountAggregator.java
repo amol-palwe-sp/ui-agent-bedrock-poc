@@ -2,7 +2,7 @@ package com.sailpoint.poc.uiagent.aggregation;
 
 import com.sailpoint.poc.uiagent.TokenUsage;
 import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
 import com.sailpoint.poc.uiagent.browser.BrowserSession;
 import com.sailpoint.poc.uiagent.replay.FingerprintMatcher;
 import com.microsoft.playwright.options.LoadState;

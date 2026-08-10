@@ -5,6 +5,7 @@ import com.sailpoint.poc.uiagent.config.AgentConfig;
 import com.sailpoint.poc.uiagent.config.AggregationConfig;
 import com.sailpoint.poc.uiagent.config.BedrockConfig;
 import com.sailpoint.poc.uiagent.config.BrowserConfig;
+import com.sailpoint.poc.uiagent.config.LlmProxyConfig;
 import com.sailpoint.poc.uiagent.config.NetworkAggregationConfig;
 import com.sailpoint.poc.uiagent.config.RelevanceConfig;
 import com.sailpoint.poc.uiagent.config.ReplayConfig;
@@ -57,6 +58,61 @@ public final class PocConfig {
     }
 
     public String bedrockModelIdEnvRaw() { return System.getenv("BEDROCK_MODEL_ID"); }
+
+    // --- LLM transport selection ---
+
+    /**
+     * Which transport reaches Claude: {@code bedrock} calls Bedrock Runtime directly,
+     * {@code proxy} goes through the SailPoint GenAI gateway.
+     *
+     * <p>Only the video-to-goal path and the Stage 1 eval honour this. Other paths remain on
+     * Bedrock regardless.
+     */
+    public String llmProvider() {
+        String env = System.getenv("LLM_PROVIDER");
+        String raw = (env != null && !env.isBlank()) ? env : optional("llm.provider", "bedrock");
+        return raw.trim().toLowerCase();
+    }
+
+    /**
+     * GenAI gateway settings.
+     *
+     * <p>Returned unvalidated so that a Bedrock run never fails on absent gateway credentials;
+     * {@code LlmProxyConfig.validate()} runs when a proxy client is actually built.
+     *
+     * @return the gateway configuration
+     */
+    public LlmProxyConfig llmProxy() {
+        return new LlmProxyConfig(
+                stripTrailingSlash(envOrProperty("LLM_PROXY_BASE_URL", "llm.proxy.base.url")),
+                envOrProperty("LLM_PROXY_CLIENT_ID", "llm.proxy.client.id"),
+                envOrProperty("LLM_PROXY_CLIENT_SECRET", "llm.proxy.client.secret"),
+                envOrProperty("LLM_PROXY_MODEL_ID", "llm.proxy.model.id"),
+                Integer.parseInt(optional("llm.proxy.connect.timeout.ms", "10000")),
+                Integer.parseInt(optional("llm.proxy.request.timeout.ms", "180000")),
+                Long.parseLong(optional("llm.proxy.poll.interval.ms", "2000")),
+                Long.parseLong(optional("llm.proxy.poll.timeout.ms", "300000")));
+    }
+
+    /**
+     * Reads a setting from the environment, falling back to {@code application.properties}.
+     *
+     * <p>The environment wins so a deployed run can inject gateway credentials without editing
+     * a file that is tracked in git.
+     *
+     * @param envName  the environment variable to prefer
+     * @param propName the property key to fall back to
+     * @return the resolved value, or an empty string when neither is set
+     */
+    private String envOrProperty(String envName, String propName) {
+        String env = System.getenv(envName);
+        if (env != null && !env.isBlank()) return env.trim();
+        return optional(propName, "");
+    }
+
+    private static String stripTrailingSlash(String url) {
+        return url.endsWith("/") ? url.substring(0, url.length() - 1) : url;
+    }
 
     // --- LLM parameters ---
 

@@ -2,10 +2,11 @@ package com.sailpoint.poc.uiagent.ui;
 
 import com.sailpoint.poc.uiagent.PocConfig;
 import com.sailpoint.poc.uiagent.TokenUsage;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient;
-import com.sailpoint.poc.uiagent.bedrock.BedrockAnthropicClient.InvokeResult;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceEvaluator;
 import com.sailpoint.poc.uiagent.eval.realtime.ConfidenceResult;
+import com.sailpoint.poc.uiagent.llm.InvokeResult;
+import com.sailpoint.poc.uiagent.llm.LlmClient;
+import com.sailpoint.poc.uiagent.llm.LlmClientFactory;
 import com.sailpoint.poc.uiagent.video.GoalExtractor;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisRequest;
 import com.sailpoint.poc.uiagent.video.VideoAnalysisResult;
@@ -119,6 +120,7 @@ public final class GenerateHandler implements HttpHandler {
             push("LOG:INFO:Extracting frames from video...");
 
             PocConfig config = new PocConfig();
+            LlmClientFactory clients = LlmClientFactory.from(config);
             int    effectiveMaxFrames = maxFrames != null ? maxFrames : config.video().maxFrames();
 
             VideoFrameExtractor extractor = new VideoFrameExtractor(
@@ -144,7 +146,7 @@ public final class GenerateHandler implements HttpHandler {
                 push("LOG:WARN:Relevance check overridden by user — analysing anyway");
             } else {
                 push("LOG:INFO:Checking whether the video shows a UI workflow...");
-                relevance = new VideoRelevanceGate(config.relevance(), config.bedrock())
+                relevance = new VideoRelevanceGate(config.relevance(), clients)
                         .evaluate(frames);
 
                 if (relevance.isRejected()) {
@@ -161,17 +163,14 @@ public final class GenerateHandler implements HttpHandler {
             }
 
             push("PROGRESS:0:" + frames.size() + ":Sending to Claude...");
-            push("LOG:INFO:Invoking Claude (model: " + config.bedrockModelId() + ")...");
+            push("LOG:INFO:Invoking Claude via " + clients.describe() + "...");
 
             // Original provisioning prompt (```goal block + full gradle line) — same as runVideo CLI
             String userPrompt = overrideUrl != null && !overrideUrl.isBlank()
                     ? VideoToGoalPrompt.userPromptWithUrl(overrideUrl)
                     : VideoToGoalPrompt.USER_PROMPT;
 
-            try (BedrockAnthropicClient client = new BedrockAnthropicClient(
-                    config.bedrock().region(), config.bedrock().profile(),
-                    config.bedrock().modelId(), config.bedrock().maxTokens(),
-                    config.bedrock().temperature())) {
+            try (LlmClient client = clients.create("video-to-goal")) {
                 InvokeResult result = client.invokeWithMultipleImages(
                         VideoToGoalPrompt.SYSTEM_PROMPT, userPrompt, frames);
 

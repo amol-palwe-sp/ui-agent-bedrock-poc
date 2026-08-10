@@ -269,7 +269,7 @@ public final class AggregationFullEvaluator {
 
         VideoAnalysisPrompt.PromptPair prompts = VideoAnalysisPrompt.build(request);
 
-        BedrockAnthropicClient.InvokeResult invokeResult;
+        com.sailpoint.poc.uiagent.llm.InvokeResult invokeResult;
         try {
             invokeResult = bedrock.invokeWithMultipleImages(
                     prompts.systemPrompt(), prompts.userPrompt(), frames);
@@ -310,14 +310,10 @@ public final class AggregationFullEvaluator {
                         : new PaginationPattern("unknown", "", ""),
                 "AGGREGATION");
 
-        // Compute overallScore via a minimal EvalResult proxy
-        EvalResult proxy = EvalResult.builder()
-                .taskType("AGGREGATION").mode("PLACEHOLDER")
-                .stepRecall(stepRecall).stepPrecision(stepPrecision)
-                .stepOrderScore(stepOrderScore).labelAccuracyScore(labelAccuracy)
-                .placeholderScore(placeholderScore).paginationScore(paginationScore)
-                .overallScore(0.0).build();
-        double overallScore = EvalMetrics.computeOverallScore(proxy);
+        // Every aggregation system here runs in placeholder mode against a paginated table,
+        // so both optional checks always apply.
+        double overallScore = EvalMetrics.computeOverallScore(
+                stepRecall, stepPrecision, stepOrderScore, placeholderScore, paginationScore);
 
         log.accept("LOG:INFO:    Script-gen score: " + String.format("%.3f", overallScore)
                 + " — executing pipeline...");
